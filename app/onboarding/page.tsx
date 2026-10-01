@@ -94,7 +94,12 @@ export default function OnboardingPage() {
 
       router.push("/dashboard");
     } catch (e) {
-      setMsg(e instanceof Error ? e.message : "Couldn't create the shop.");
+      const code = (e as { code?: string })?.code || "";
+      setMsg(
+        code === "permission-denied"
+          ? "The server rejected shop creation. You are signed in, so this means the deployed security rules are older than this app — redeploy them: npx firebase-tools deploy --only firestore:rules --project stocfindr"
+          : e instanceof Error ? e.message : "Couldn't create the shop."
+      );
       setBusy(false);
     }
   }

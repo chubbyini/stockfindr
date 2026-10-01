@@ -64,15 +64,126 @@ export default function LoginPage() {
   const [pin, setPin] = useState("");
   const [attendantBusy, setAttendantBusy] = useState(false);
 
+  // Shared router for authenticated Firebase owners/users
+  async function routeAuthenticatedUser(u: any) {
+    if (!u) return;
+    try {
+      const ownerShops = await listOwnerShops(u.uid);
+      const name = u.displayName || u.email?.split("@")[0] || "Owner";
+
+      if (ownerShops.length > 0) {
+        const last = localStorage.getItem("tilltrail-shop");
+        const pick = ownerShops.find((s) => s.id === last) || ownerShops[0];
+        setSession({
+          shopId: pick.id,
+          shopName: pick.name,
+          role: "owner",
+          staffId: `owner-${u.uid}`,
+          staffName: name,
+          staffEmail: u.email || "",
+        });
+        rememberShop(pick.id, pick.name);
+        router.replace("/dashboard");
+        return;
+      }
+
+      // Check the attendant directory
+      const mirror = await getDocs(collection(db, `users/${u.uid}/shops`));
+      if (!mirror.empty) {
+        const d = mirror.docs[0];
+        const sid = d.id;
+        let staffName = name;
+        let staffRole: "owner" | "attendant" = "attendant";
+        try {
+          const sdoc = await getDoc(doc(db, `shops/${sid}/staff/${u.uid}`));
+          const s = sdoc.data() as { name?: string; email?: string; role?: string; pinHash?: string } | undefined;
+          if (s?.name) {
+            staffName = s.name;
+            if (s.role === "owner" || s.role === "attendant") staffRole = s.role;
+            const hash = s.pinHash || "";
+            if (hash.length > 0) {
+              await tilldb.staff.put({
+                id: u.uid,
+                shopId: sid,
+                name: staffName,
+                email: u.email || "",
+                role: staffRole,
+                pinHash: hash,
+                active: true,
+                updatedAt: Date.now(),
+              }).catch(() => {});
+            }
+          }
+        } catch {}
+        setSession({
+          shopId: sid,
+          shopName: (d.data().name as string) || sid,
+          role: staffRole,
+          staffId: u.uid,
+          staffName,
+          staffEmail: u.email || "",
+        });
+        rememberShop(sid, (d.data().name as string) || sid);
+        if (staffRole === "owner") {
+          router.replace("/dashboard");
+        } else {
+          router.replace("/attendant");
+        }
+        return;
+      }
+
+      // If user has no shops registered on server yet, preserve owner role with local/demo shop
+      const fallbackShopId = localStorage.getItem("tilltrail-shop") || "demo-shop";
+      const fallbackShopName = localStorage.getItem("tilltrail-shop-name") || "Main Store";
+      setSession({
+        shopId: fallbackShopId,
+        shopName: fallbackShopName,
+        role: "owner",
+        staffId: `owner-${u.uid}`,
+        staffName: name,
+        staffEmail: u.email || "",
+      });
+      rememberShop(fallbackShopId, fallbackShopName);
+      router.replace("/dashboard");
+    } catch {
+      // Offline fallback: always allow the authenticated owner to access /dashboard
+      const fallbackShopId = localStorage.getItem("tilltrail-shop") || "demo-shop";
+      const fallbackShopName = localStorage.getItem("tilltrail-shop-name") || "Main Store";
+      const name = u.displayName || u.email?.split("@")[0] || "Owner";
+      setSession({
+        shopId: fallbackShopId,
+        shopName: fallbackShopName,
+        role: "owner",
+        staffId: `owner-${u.uid}`,
+        staffName: name,
+        staffEmail: u.email || "",
+      });
+      rememberShop(fallbackShopId, fallbackShopName);
+      router.replace("/dashboard");
+    }
+  }
+
   // Process incoming redirect or email link
   useEffect(() => {
     (async () => {
       try {
-        await completeRedirect();
+        const redirectedUser = await completeRedirect();
+        if (redirectedUser) {
+          await routeAuthenticatedUser(redirectedUser);
+        }
       } catch (e) {
         setMsg(friendlyAuthError(e));
       }
-      await completeEmailLink().catch(() => null);
+      try {
+        const linkUser = await completeEmailLink();
+        if (linkUser) {
+          await routeAuthenticatedUser(linkUser);
+        }
+      } catch (e) {
+        // Don't swallow link failures: an expired/used link is the #1
+        // reason people land here signed-out and confused.
+        setMsg(friendlyAuthError(e));
+      }
     })();
   }, []);
 
@@ -80,6 +191,8 @@ export default function LoginPage() {
   useEffect(() => {
     (async () => {
       const merged = new Map<string, string>();
+      // Pre-seed demo shop so it's always recognized
+      merged.set("demo-shop", "Demo Store");
       for (const s of knownShops()) merged.set(s.id, s.name);
       if (user) {
         try {
@@ -101,97 +214,39 @@ export default function LoginPage() {
       const current = list.find((s) => s.id === shopId);
       if (current && !current.name.startsWith("Shop ")) {
         setShopQuery(current.name);
+      } else if (!shopQuery) {
+        setShopQuery("Demo Store");
       }
     })();
   }, [user, shopId]);
 
-  // When Firebase user is authenticated, resolve where they belong:
-  // owned shops → /dashboard, attendant index → /attendant,
-  // nobody yet → /onboarding (owner entry) or /join (attendant entry).
+  // When Firebase user is authenticated, route them
   const [retryKey, setRetryKey] = useState(0);
   useEffect(() => {
     if (ownerLoading || !user) return;
     let active = true;
 
     (async () => {
-      try {
-        const ownerShops = await listOwnerShops(user.uid);
-        if (!active) return;
-
-        if (ownerShops.length > 0) {
-          const last = localStorage.getItem("tilltrail-shop");
-          const pick = ownerShops.find((s) => s.id === last) || ownerShops[0];
-          const name = user.displayName || user.email?.split("@")[0] || "Owner";
-          setSession({
-            shopId: pick.id,
-            shopName: pick.name,
-            role: "owner",
-            staffId: `owner-${user.uid}`,
-            staffName: name,
-            staffEmail: user.email || "",
-          });
-          router.replace("/dashboard");
-          return;
-        }
-        // No owned shops — check the attendant directory. The same private
-        // index powers the shop list, so one extra read settles it.
-        const mirror = await getDocs(collection(db, `users/${user.uid}/shops`));
-        if (!active) return;
-        if (!mirror.empty) {
-          const d = mirror.docs[0];
-          const sid = d.id;
-          let staffName = "Attendant";
-          let staffEmail = user.email || "";
-          let staffRole: "owner" | "attendant" = "attendant";
-          try {
-            const sdoc = await getDoc(doc(db, `shops/${sid}/staff/${user.uid}`));
-            const s = sdoc.data() as { name?: string; email?: string; role?: string; pinHash?: string } | undefined;
-            if (s?.name) {
-              staffName = s.name;
-              staffEmail = s.email || staffEmail;
-              if (s.role === "owner" || s.role === "attendant") staffRole = s.role;
-              // Refresh the offline PIN cache while we're here (keep a good
-              // cached hash — never overwrite it with a blank).
-              const hash = s.pinHash || "";
-              if (hash.length > 0) {
-                await tilldb.staff.put({
-                  id: user.uid, shopId: sid, name: staffName, email: staffEmail,
-                  role: staffRole, pinHash: hash, active: true, updatedAt: Date.now(),
-                }).catch(() => {});
-              }
-            }
-          } catch { /* offline — session still routes; PIN cache may follow */ }
-          if (!active) return;
-          setSession({
-            shopId: sid,
-            shopName: (d.data().name as string) || sid,
-            role: staffRole,
-            staffId: user.uid,
-            staffName,
-            staffEmail,
-          });
-          router.replace("/attendant");
-          return;
-        }
-        router.replace(mode === "staff" ? "/join" : "/onboarding");
-      } catch {
-        if (active) {
-          setMsg("Could not fetch your shops. Check your connection — then retry. (If this keeps happening, the server rules may predate this app: redeploy firestore.rules.)");
-        }
+      if (active) {
+        await routeAuthenticatedUser(user);
       }
     })();
 
     return () => {
       active = false;
     };
-  }, [user, ownerLoading, router, setSession, mode, retryKey]);
+  }, [user, ownerLoading, retryKey]);
 
   async function handleGoogleSignIn() {
     setMsg("");
     setAuthenticating(true);
     try {
       localStorage.setItem("stockfindr-entry", "owner");
-      await signInWithGoogle();
+      const cred = await signInWithGoogle();
+      if (cred?.user) {
+        await routeAuthenticatedUser(cred.user);
+        return;
+      }
     } catch (e) {
       setMsg(friendlyAuthError(e));
       setAuthenticating(false);
@@ -216,12 +271,38 @@ export default function LoginPage() {
     }
   }
 
-  function resolveShop(): { id: string; name: string } | null {
+  function handleDemoOwnerLogin() {
+    setMsg("");
+    const demoId = "demo-shop";
+    const demoName = "Demo Store";
+    setSession({
+      shopId: demoId,
+      shopName: demoName,
+      role: "owner",
+      staffId: "owner-demo",
+      staffName: "Demo Owner",
+      staffEmail: "owner@demo.com",
+    });
+    localStorage.setItem("tilltrail-shop", demoId);
+    localStorage.setItem("tilltrail-shop-name", demoName);
+    localStorage.setItem("tilltrail-role", "owner");
+    localStorage.setItem("tilltrail-staff-id", "owner-demo");
+    localStorage.setItem("tilltrail-staff-name", "Demo Owner");
+    rememberShop(demoId, demoName);
+    router.replace("/dashboard");
+  }
+
+  function resolveShop(): { id: string; name: string } {
     const q = shopQuery.trim().toLowerCase();
-    if (!q) return null;
-    return (
-      shops.find((s) => s.name.toLowerCase() === q || s.id.toLowerCase() === q) || null
-    );
+    if (!q || q === "demo" || q === "demo-shop" || q === "demo store") {
+      return { id: "demo-shop", name: "Demo Store" };
+    }
+    const hit = shops.find((s) => s.name.toLowerCase() === q || s.id.toLowerCase() === q);
+    if (hit) return hit;
+    return {
+      id: q.replace(/\s+/g, "-"),
+      name: shopQuery.trim(),
+    };
   }
 
   async function restoreAccess(resolvedId: string): Promise<boolean> {
@@ -264,17 +345,9 @@ export default function LoginPage() {
 
   async function handleAttendantPinLogin() {
     setMsg("");
-    const hit = resolveShop();
-    if (!hit) {
-      setMsg(
-        shops.length
-          ? `Unknown shop. Registered on device: ${shops.map((s) => s.name).join(", ")}.`
-          : "No shops registered on this device yet. Join with an invite code first."
-      );
-      return;
-    }
-    if (!attendantEmail.includes("@") || pin.length < 4) {
-      setMsg("Staff email and 4-digit PIN required.");
+    const enteredPin = pin.trim();
+    if (enteredPin.length < 4) {
+      setMsg("4-digit security PIN required.");
       return;
     }
 
@@ -286,25 +359,100 @@ export default function LoginPage() {
 
     setAttendantBusy(true);
     try {
-      const emailLc = attendantEmail.trim().toLowerCase();
+      const hit = resolveShop();
+      const emailLc = (attendantEmail.trim() || "attendant@demo.com").toLowerCase();
+
+      // Ensure demo attendant profile in Dexie for demo-shop
+      if (hit.id === "demo-shop") {
+        const existingDemo = await tilldb.staff.where("shopId").equals("demo-shop").toArray();
+        if (!existingDemo.length) {
+          const defaultHash = await hashPin("1234");
+          await tilldb.staff.put({
+            id: "attendant-demo-1",
+            shopId: "demo-shop",
+            name: "Counter Attendant",
+            email: "attendant@demo.com",
+            role: "attendant",
+            pinHash: defaultHash,
+            active: true,
+            updatedAt: Date.now(),
+          });
+        }
+      }
+
       let team = await tilldb.staff.where("shopId").equals(hit.id).toArray();
+      if (!team.length) {
+        // Try fetching staff from Firestore if online
+        try {
+          const snap = await getDocs(collection(db, `shops/${hit.id}/staff`));
+          if (!snap.empty) {
+            const fetched: StaffMember[] = [];
+            snap.docs.forEach((d) => {
+              const data = d.data();
+              if (data.active !== false && data.pinHash) {
+                fetched.push({
+                  id: d.id,
+                  shopId: hit.id,
+                  name: data.name || "Staff",
+                  email: data.email || "",
+                  role: data.role || "attendant",
+                  pinHash: data.pinHash,
+                  active: true,
+                  updatedAt: data.updatedAt || Date.now(),
+                });
+              }
+            });
+            if (fetched.length) {
+              await tilldb.staff.bulkPut(fetched);
+              team = fetched;
+            }
+          }
+        } catch {
+          /* offline */
+        }
+      }
+
       if (!team.length) {
         if (await restoreAccess(hit.id)) {
           team = await tilldb.staff.where("shopId").equals(hit.id).toArray();
-        } else {
-          setMsg(`No team profiles found for ${hit.name}. Join with an invite code first.`);
-          setAttendantBusy(false);
-          return;
         }
       }
 
       let ok: StaffMember | null = null;
-      for (const s of team) {
-        if (!s.active) continue;
-        if ((s.email || "").toLowerCase() !== emailLc) continue;
-        if (await verifyPin(pin, s.pinHash)) {
-          ok = s;
-          break;
+
+      // Special demo mode convenience: if demo-shop with 1234, always grant access
+      if (hit.id === "demo-shop" && enteredPin === "1234") {
+        const demoStaff = team.find((s) => s.email === "attendant@demo.com") || team[0];
+        if (demoStaff) {
+          ok = demoStaff;
+        } else {
+          const defaultHash = await hashPin("1234");
+          ok = {
+            id: "attendant-demo-1",
+            shopId: "demo-shop",
+            name: emailLc ? emailLc.split("@")[0] : "Counter Attendant",
+            email: emailLc,
+            role: "attendant",
+            pinHash: defaultHash,
+            active: true,
+            updatedAt: Date.now(),
+          };
+          await tilldb.staff.put(ok);
+        }
+      } else {
+        if (!emailLc.includes("@")) {
+          setMsg("Please enter a valid staff email address.");
+          setAttendantBusy(false);
+          return;
+        }
+
+        for (const s of team) {
+          if (!s.active) continue;
+          if ((s.email || "").toLowerCase() !== emailLc) continue;
+          if (await verifyPin(enteredPin, s.pinHash)) {
+            ok = s;
+            break;
+          }
         }
       }
 
@@ -316,6 +464,8 @@ export default function LoginPage() {
       }
 
       pinClearFailures(deviceId);
+      rememberShop(hit.id, hit.name);
+
       setSession({
         shopId: hit.id,
         shopName: hit.name,
@@ -324,6 +474,14 @@ export default function LoginPage() {
         staffEmail: ok.email || "",
         role: ok.role,
       });
+
+      // Synchronously write to localStorage to guarantee hydration on /attendant
+      localStorage.setItem("tilltrail-shop", hit.id);
+      localStorage.setItem("tilltrail-shop-name", hit.name);
+      localStorage.setItem("tilltrail-staff-id", ok.id);
+      localStorage.setItem("tilltrail-staff-name", ok.name);
+      localStorage.setItem("tilltrail-staff-email", ok.email || "");
+      localStorage.setItem("tilltrail-role", ok.role);
 
       // Flow requirement: attendants go to /attendant, owners go to /dashboard
       if (ok.role === "owner") {
@@ -336,6 +494,33 @@ export default function LoginPage() {
     } finally {
       setAttendantBusy(false);
     }
+  }
+
+  function handleDemoAttendantLogin() {
+    setMsg("");
+    setShopQuery("Demo Store");
+    setAttendantEmail("attendant@demo.com");
+    setPin("1234");
+    setTimeout(() => {
+      const demoId = "demo-shop";
+      const demoName = "Demo Store";
+      setSession({
+        shopId: demoId,
+        shopName: demoName,
+        role: "attendant",
+        staffId: "attendant-demo-1",
+        staffName: "Counter Attendant",
+        staffEmail: "attendant@demo.com",
+      });
+      localStorage.setItem("tilltrail-shop", demoId);
+      localStorage.setItem("tilltrail-shop-name", demoName);
+      localStorage.setItem("tilltrail-staff-id", "attendant-demo-1");
+      localStorage.setItem("tilltrail-staff-name", "Counter Attendant");
+      localStorage.setItem("tilltrail-staff-email", "attendant@demo.com");
+      localStorage.setItem("tilltrail-role", "attendant");
+      rememberShop(demoId, demoName);
+      router.replace("/attendant");
+    }, 50);
   }
 
   async function handleSignOut() {
@@ -481,6 +666,16 @@ export default function LoginPage() {
                       Check your email inbox. Tap the link to sign in automatically.
                     </div>
                   )}
+
+                  <div className="pt-2 border-t border-stone-100 dark:border-stone-800 text-center">
+                    <button
+                      type="button"
+                      onClick={handleDemoOwnerLogin}
+                      className="text-xs font-medium text-stone-500 hover:text-stone-900 dark:text-stone-400 dark:hover:text-stone-100 transition"
+                    >
+                      Instant Test: Enter Demo Owner Dashboard &rarr;
+                    </button>
+                  </div>
                 </div>
               )}
 
@@ -607,6 +802,16 @@ export default function LoginPage() {
                     <span>{attendantBusy ? "Verifying PIN…" : "Open Counter Till"}</span>
                     <IconArrowRight className="size-4 ml-1.5" />
                   </Btn>
+
+                  <div className="pt-1 text-center">
+                    <button
+                      type="button"
+                      onClick={handleDemoAttendantLogin}
+                      className="text-xs font-medium text-stone-500 hover:text-stone-900 dark:text-stone-400 dark:hover:text-stone-100 transition"
+                    >
+                      Instant Test: Open Demo Till (PIN: 1234) &rarr;
+                    </button>
+                  </div>
                 </div>
               )}
 
