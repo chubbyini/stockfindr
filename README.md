@@ -66,6 +66,10 @@ First time: `npx trigger.dev@latest init` to link your project (fills the
 Deploy with `npx trigger.dev@latest deploy`. Test from the dashboard's
 "Test schedule" button.
 
+Status: linked to `stockfindr` (`proj_ixyvognhczqulijstdgs`), prod env vars set,
+v20261001.1 deployed. Test runs:
+`https://cloud.trigger.dev/projects/v3/proj_ixyvognhczqulijstdgs/test?environment=prod`
+
 ## Push to GitHub
 
 Live at `github.com/chubbyini/stockfindr` (`main`).
