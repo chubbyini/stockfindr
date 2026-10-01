@@ -1,11 +1,12 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { db } from "@/lib/firebase/client";
 import { collection, getDocs, doc, setDoc, writeBatch, serverTimestamp } from "firebase/firestore";
 import { useSession } from "@/store/pos";
 import { tilldb } from "@/lib/db/dexie";
 import type { Product } from "@/lib/types";
 import * as XLSX from "xlsx";
+import { BrowserMultiFormatReader } from "@zxing/browser";
 import { Badge, Btn, Card, Empty, Field, Page, TopBar, inputCls } from "@/components/ui";
 
 export default function ProductsPage() {
@@ -13,9 +14,33 @@ export default function ProductsPage() {
   const [items, setItems] = useState<Product[]>([]);
   const [form, setForm] = useState({ name: "", barcode: "", price: "", cost: "", reorder: "5", stock: "", pinned: false });
   const [msg, setMsg] = useState("");
+  const [scanOpen, setScanOpen] = useState(false);
+  const [scanErr, setScanErr] = useState("");
+  const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => { refresh(); // eslint-disable-next-line
   }, [shopId]);
+
+  // Camera → barcode field. Stops on first decode or when closed.
+  useEffect(() => {
+    if (!scanOpen) return;
+    let controls: { stop(): void } | null = null;
+    let cancelled = false;
+    (async () => {
+      try {
+        const reader = new BrowserMultiFormatReader();
+        controls = await reader.decodeFromVideoDevice(undefined, videoRef.current!, (result) => {
+          if (result && !cancelled) {
+            setForm((f) => ({ ...f, barcode: result.getText() }));
+            setScanOpen(false);
+          }
+        });
+      } catch {
+        if (!cancelled) setScanErr("Camera unavailable — type the barcode instead.");
+      }
+    })();
+    return () => { controls?.stop(); };
+  }, [scanOpen]);
 
   async function refresh() {
     try {
@@ -60,6 +85,27 @@ export default function ProductsPage() {
     setForm({ name: "", barcode: "", price: "", cost: "", reorder: "5", stock: "", pinned: false });
     setMsg("Saved ✓");
     refresh();
+  }
+
+  function downloadTemplate() {
+    const rows = [
+      { name: "Gala sausage roll", barcode: "6151100100123", price: 500, cost: 350, reorder_level: 10, opening_stock: 24 },
+      { name: "Agege bread (family)", barcode: "", price: 1200, cost: 900, reorder_level: 5, opening_stock: 8 },
+      { name: "Pure water (bag)", barcode: "6151100200456", price: 400, cost: 300, reorder_level: 12, opening_stock: 30 },
+    ];
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Products");
+    const buf = XLSX.write(wb, { type: "array", bookType: "xlsx" });
+    const blob = new Blob([buf], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "stockfindr-products-template.xlsx";
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   async function onFile(f: File) {
@@ -131,8 +177,12 @@ export default function ProductsPage() {
               <Field label="Name">
                 <input placeholder="e.g. Gala sausage roll" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} className={inputCls} />
               </Field>
-              <Field label="Barcode" hint="Optional — leave blank for unbarcoded goods.">
-                <input placeholder="Scan or type" value={form.barcode} onChange={e => setForm({ ...form, barcode: e.target.value })} className={inputCls} />
+              <Field label="Barcode" hint="Scan it with the camera or type it. Blank for unbarcoded goods.">
+                <div className="flex gap-2">
+                  <input placeholder="Scan or type" value={form.barcode} onChange={e => setForm({ ...form, barcode: e.target.value })} className={inputCls} />
+                  <Btn variant="secondary" onClick={() => { setScanErr(""); setScanOpen(true); }} className="shrink-0">Scan</Btn>
+                </div>
+                {scanErr && <p className="mt-1 text-xs text-red-600">{scanErr}</p>}
               </Field>
               <div className="flex gap-2">
                 <Field label="Price">
@@ -160,6 +210,9 @@ export default function ProductsPage() {
           <Card>
             <h2 className="font-bold">Import spreadsheet</h2>
             <p className="mt-1 text-xs text-stone-500">Columns: name, barcode, price, cost, reorder_level, opening_stock</p>
+            <Btn variant="secondary" size="sm" onClick={downloadTemplate} className="mt-2">
+              Download template
+            </Btn>
             <label className="mt-3 block cursor-pointer rounded-xl border border-dashed border-stone-300 bg-stone-50 p-4 text-center text-sm font-medium text-brand-800">
               Tap to choose .xlsx / .csv
               <input type="file" accept=".xlsx,.csv" onChange={e => e.target.files?.[0] && onFile(e.target.files[0])} className="hidden" />
@@ -194,6 +247,17 @@ export default function ProductsPage() {
           {!items.length && <div className="px-4 py-3"><Empty>No products yet — add one above.</Empty></div>}
         </Card>
       </Page>
+      {scanOpen && (
+        <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/70 p-4">
+          <div className="w-full max-w-sm rounded-3xl bg-white p-4">
+            <h3 className="font-bold">Point at the barcode</h3>
+            <video ref={videoRef} className="mt-2 aspect-[4/3] w-full rounded-2xl bg-black object-cover" playsInline muted />
+            <Btn variant="secondary" onClick={() => setScanOpen(false)} className="mt-3 w-full">
+              Cancel
+            </Btn>
+          </div>
+        </div>
+      )}
     </>
   );
 }
