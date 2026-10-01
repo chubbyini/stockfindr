@@ -113,11 +113,17 @@ service cloud.firestore {
       }
 
       match /products/{pid} {
-        // attendants can quick-add (create) but not delete; owner edits
+        // attendants can quick-add (create) + decrement stock on sale, but
+        // only the owner can edit price/cost/status/etc or delete.
+        // NOTE: push.ts decrements via set({current_stock: increment(-qty)},
+        // {merge:true}) on an EXISTING doc, so request.resource is the merged
+        // doc (still contains `status`). Checking `'status' in newData` would
+        // always deny attendants — check the diff instead.
         allow read: if isMember(shopId);
         allow create: if isMember(shopId);
         allow update: if isOwner(shopId)
-          || (isMember(shopId) && !('status' in request.resource.data) );
+          || (isMember(shopId)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['current_stock', 'updatedAt']));
         allow delete: if isOwner(shopId);
       }
       match /sales/{sid} {
@@ -128,7 +134,7 @@ service cloud.firestore {
         match /items/{iid} {
           allow read: if isMember(shopId);
           allow create: if isMember(shopId);
-          allow read, write: if false;
+          allow update, delete: if false;
         }
       }
       match /ledger/{lid} {

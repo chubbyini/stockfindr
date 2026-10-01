@@ -1,32 +1,69 @@
 "use client";
-import { useEffect, useState } from "react";
+
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
+
+const emptySubscribe = () => () => {};
+function useHydration() {
+  return useSyncExternalStore(emptySubscribe, () => true, () => false);
+}
 import { useCart, useSession, round2 } from "@/store/pos";
 import { useOwner } from "@/lib/auth/owner";
 import { tilldb } from "@/lib/db/dexie";
-import { enableOffline } from "@/lib/firebase/client";
+import { db, enableOffline } from "@/lib/firebase/client";
 import { pushOutbox } from "@/lib/sync/push";
 import { diagnoseSync, type SyncDiagnosis } from "@/lib/sync/diagnose";
 import { collection, doc, getDoc, getDocs, query, where } from "firebase/firestore";
-import { db } from "@/lib/firebase/client";
 import type { Product } from "@/lib/types";
 import { BrowserMultiFormatReader } from "@zxing/browser";
-import { Badge, Btn, Empty, TopBar, inputCls } from "@/components/ui";
+import { Badge, Btn, Empty, TopBar, inputCls, Card } from "@/components/ui";
+import { EnsureOwnerTillAccount } from "@/components/owner-pin-setup";
+import OwnerShell from "@/components/owner-shell";
+import {
+  IconCamera,
+  IconPlus,
+  IconMinus,
+  IconLock,
+  IconSell,
+} from "@/components/icons";
+
+function beep(ok = true) {
+  try {
+    const ctx = new AudioContext();
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.connect(g);
+    g.connect(ctx.destination);
+    o.frequency.value = ok ? 880 : 220;
+    o.start();
+    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
+    setTimeout(() => ctx.close(), 200);
+  } catch {
+    /* no audio */
+  }
+}
 
 export default function SellPage() {
   const { lines, add, inc, dec, clear, restore, total } = useCart();
   const { shopId, shopName, staffId, staffName, deviceId, setSession } = useSession();
   const { user: fbUser, loading: fbLoading } = useOwner();
   const router = useRouter();
+
+  const mounted = useHydration();
+
   const [catalog, setCatalog] = useState<Product[]>([]);
   const [search, setSearch] = useState("");
   const [pending, setPending] = useState(0);
   const [syncErr, setSyncErr] = useState("");
   const [diag, setDiag] = useState<SyncDiagnosis | null>(null);
 
+  // Mobile cart drawer toggle
+  const [mobileCartOpen, setMobileCartOpen] = useState(false);
+
   async function runDiag() {
     setDiag(await diagnoseSync(shopId));
   }
+
   const [toast, setToast] = useState<null | { saleId: string; lines: typeof lines }>(null);
   const [scanMsg, setScanMsg] = useState("");
   const [quickAdd, setQuickAdd] = useState<null | { barcode: string }>(null);
@@ -37,15 +74,14 @@ export default function SellPage() {
     enableOffline();
     loadLocal();
     const t = setInterval(syncNow, 15000);
-    // promote held -> pending after 10s, then push
     const promo = setInterval(promoteHeld, 2000);
-    return () => { clearInterval(t); clearInterval(promo); };
+    return () => {
+      clearInterval(t);
+      clearInterval(promo);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shopId]);
 
-  // Gate: a PIN session gets straight in. Otherwise only the shop's OWNER
-  // (Google-authed) may sell without a PIN — everyone else goes to /pin
-  // for shop + email + PIN. No more anonymous or "unknown" sellers.
   useEffect(() => {
     if (fbLoading) return;
     const s = useSession.getState();
@@ -62,17 +98,15 @@ export default function SellPage() {
             setSession({ staffId: `owner-${fbUser.uid}`, staffName: name });
             return;
           }
-        } catch { /* fall through to /pin */ }
+        } catch {
+          /* fall through to /pin */
+        }
       }
       router.push("/pin");
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fbLoading]);
-  // The basket survives (separate store) — the next PIN returns to it.
-  // NOTE: lock clears only the local PIN session, NOT the Firebase user.
-  // Join established the device's Firebase identity (uid == staff id), and
-  // every sale/ledger write is stamped with the PIN session's staff id, so
-  // accountability is intact while offline-first sync keeps working.
+
   useEffect(() => {
     let t: ReturnType<typeof setTimeout>;
     const lock = () => {
@@ -99,26 +133,44 @@ export default function SellPage() {
   async function loadLocal() {
     const local = await tilldb.products.where("shopId").equals(shopId).toArray();
     setCatalog(local);
-    const count = await tilldb.outbox.where("shopId").equals(shopId).filter(s => s.status !== "synced").count();
+    const count = await tilldb.outbox
+      .where("shopId")
+      .equals(shopId)
+      .filter((s) => s.status !== "synced")
+      .count();
     setPending(count);
-    // refresh from server when online
+
     try {
-      const q = query(collection(db, `shops/${shopId}/products`), where("status", "in", ["active", "pending_review"]));
+      const q = query(
+        collection(db, `shops/${shopId}/products`),
+        where("status", "in", ["active", "pending_review"])
+      );
       const snap = await getDocs(q);
-      const remote = snap.docs.map(d => ({ id: d.id, shopId, ...d.data() } as Product));
+      const remote = snap.docs.map(
+        (d) => ({ id: d.id, shopId, ...d.data() } as Product)
+      );
       if (remote.length) {
         setCatalog(remote);
         await tilldb.products.bulkPut(remote);
       }
-    } catch { /* offline */ }
+    } catch {
+      /* offline */
+    }
   }
 
   async function promoteHeld() {
-    const due = await tilldb.outbox.where("syncAfter").belowOrEqual(Date.now()).toArray();
-    for (const s of due.filter(x => x.status === "held")) {
+    const due = await tilldb.outbox
+      .where("syncAfter")
+      .belowOrEqual(Date.now())
+      .toArray();
+    for (const s of due.filter((x) => x.status === "held")) {
       await tilldb.outbox.update(s.saleId, { status: "pending" });
     }
-    const count = await tilldb.outbox.where("shopId").equals(shopId).filter(s => s.status !== "synced").count();
+    const count = await tilldb.outbox
+      .where("shopId")
+      .equals(shopId)
+      .filter((s) => s.status !== "synced")
+      .count();
     setPending(count);
   }
 
@@ -127,29 +179,25 @@ export default function SellPage() {
       const r = await pushOutbox(shopId);
       if (r.pushed) loadLocal();
       if (r.failed > 0) {
-        const f = await tilldb.outbox.where("shopId").equals(shopId).filter(s => s.status === "failed").first();
+        const f = await tilldb.outbox
+          .where("shopId")
+          .equals(shopId)
+          .filter((s) => s.status === "failed")
+          .first();
         const raw = f?.lastError || "will retry automatically";
-        setSyncErr("Sync stuck: " + raw.replace(/^FirebaseError:\s*/, "").slice(0, 120));
+        setSyncErr(
+          "Sync stuck: " + raw.replace(/^FirebaseError:\s*/, "").slice(0, 120)
+        );
       } else {
         setSyncErr("");
       }
-    } catch { /* badge only */ }
-  }
-
-  function beep(ok = true) {
-    try {
-      const ctx = new AudioContext();
-      const o = ctx.createOscillator();
-      const g = ctx.createGain();
-      o.connect(g); g.connect(ctx.destination);
-      o.frequency.value = ok ? 880 : 220;
-      o.start(); g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
-      setTimeout(() => ctx.close(), 200);
-    } catch { /* no audio */ }
+    } catch {
+      /* badge only */
+    }
   }
 
   function findByBarcode(code: string) {
-    return catalog.find(p => p.barcode === code);
+    return catalog.find((p) => p.barcode === code);
   }
 
   function handleBarcode(code: string) {
@@ -168,24 +216,29 @@ export default function SellPage() {
     setScanMsg("Point camera at barcode…");
     try {
       const reader = new BrowserMultiFormatReader();
-      const result = await reader.decodeOnceFromVideoDevice(undefined, undefined as unknown as string);
+      const result = await reader.decodeOnceFromVideoDevice(
+        undefined,
+        undefined as unknown as string
+      );
       handleBarcode(result.getText());
-      // decodeOnce* stops the stream on resolve — nothing to tear down
-    } catch (e) {
+    } catch {
       setScanMsg("Camera scan failed — type barcode or tap a tile.");
     }
   }
 
   async function confirmSale() {
     if (!lines.length) return;
-    // No negative stock: block lines exceeding what's on the shelf.
-    const short = lines.filter(l => {
-      const p = catalog.find(c => c.id === l.productId);
+    const short = lines.filter((l) => {
+      const p = catalog.find((c) => c.id === l.productId);
       return p != null && l.quantity > (p.current_stock ?? 0) + 1e-9;
     });
     if (short.length) {
-      const p = catalog.find(c => c.id === short[0].productId);
-      setSyncErr(`Not enough ${p?.name ?? "stock"} — only ${p?.current_stock ?? 0} left. Restock it first.`);
+      const p = catalog.find((c) => c.id === short[0].productId);
+      setSyncErr(
+        `Not enough ${p?.name ?? "stock"} — only ${
+          p?.current_stock ?? 0
+        } left. Restock it first.`
+      );
       beep(false);
       return;
     }
@@ -193,13 +246,20 @@ export default function SellPage() {
     const saleId = crypto.randomUUID();
     const occurredAt = Date.now();
     await tilldb.outbox.put({
-      saleId, shopId, staffId: staffId || "unknown", deviceId,
-      lines: [...lines], total: round2(total()),
-      occurredAt, status: "held",
-      syncAfter: occurredAt + 10000, attempts: 0,
+      saleId,
+      shopId,
+      staffId: staffId || "unknown",
+      deviceId,
+      lines: [...lines],
+      total: round2(total()),
+      occurredAt,
+      status: "held",
+      syncAfter: occurredAt + 10000,
+      attempts: 0,
     });
     setToast({ saleId, lines: [...lines] });
     clear();
+    setMobileCartOpen(false);
     setTimeout(async () => {
       setToast(null);
       await tilldb.outbox.update(saleId, { status: "pending" }).catch(() => {});
@@ -216,44 +276,62 @@ export default function SellPage() {
 
   async function quickAddSave() {
     if (!qaName || !qaPrice) return;
-    const id = "p-" + Math.random().toString(36).slice(2, 10);
+    const id = "p-" + crypto.randomUUID().slice(0, 8);
     const prod: Product = {
-      id, shopId, barcode: quickAdd?.barcode || null, name: qaName,
-      price: parseFloat(qaPrice), cost_price: null, reorder_level: 5,
-      is_pinned: false, current_stock: 0, status: "pending_review",
-      created_by: staffId, updatedAt: Date.now(),
+      id,
+      shopId,
+      barcode: quickAdd?.barcode || null,
+      name: qaName,
+      price: Number.parseFloat(qaPrice),
+      cost_price: null,
+      reorder_level: 5,
+      is_pinned: false,
+      current_stock: 0,
+      status: "pending_review",
+      created_by: staffId,
+      updatedAt: Date.now(),
     };
-    // local immediately so sale can continue offline
     await tilldb.products.put(prod);
-    setCatalog(c => [...c, prod]);
+    setCatalog((c) => [...c, prod]);
     add({ productId: id, name: prod.name, price: prod.price });
     try {
-      const { doc, setDoc } = await import("firebase/firestore");
+      const { setDoc } = await import("firebase/firestore");
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { id: _drop, ...body } = prod;
       await setDoc(doc(db, `shops/${shopId}/products/${id}`), body);
-    } catch { /* will sync later via import review */ }
-    setQuickAdd(null); setQaName(""); setQaPrice("");
+    } catch {
+      /* will sync later */
+    }
+    setQuickAdd(null);
+    setQaName("");
+    setQaPrice("");
   }
 
-  const pinned = catalog.filter(p => p.is_pinned);
-  const rest = catalog.filter(p => !p.is_pinned);
+  const pinned = catalog.filter((p) => p.is_pinned);
+  const rest = catalog.filter((p) => !p.is_pinned);
   const q = search.trim().toLowerCase();
-  // No search: pinned tiles first, then the rest of the catalog — the grid
-  // is never mysteriously empty when products exist.
   const filtered = q
-    ? catalog.filter(p => p.name.toLowerCase().includes(q) || (p.barcode || "").toLowerCase().includes(q)).slice(0, 30)
+    ? catalog
+        .filter(
+          (p) =>
+            p.name.toLowerCase().includes(q) ||
+            (p.barcode || "").toLowerCase().includes(q)
+        )
+        .slice(0, 30)
     : [...pinned, ...rest].slice(0, 24);
 
+  const totalLineCount = lines.reduce((acc, item) => acc + item.quantity, 0);
+
   return (
-    <>
+    <OwnerShell>
+      <EnsureOwnerTillAccount />
       <TopBar
-        title="Sell"
-        sub={`${shopName || "Till"} • ${staffName || "Attendant"}`}
+        title="Sell POS"
+        sub={mounted ? `${shopName || "Till"} • ${staffName || "Attendant"}` : undefined}
         right={
           <span className="flex items-center gap-2">
             <Badge tone={pending ? "amber" : "green"}>
-              {pending ? `${pending} to sync` : "synced"}
+              {pending ? `${pending} queued` : "synced"}
             </Badge>
             <Btn
               size="sm"
@@ -263,112 +341,348 @@ export default function SellPage() {
                 router.push("/pin");
               }}
             >
-              Lock
+              <IconLock className="size-3.5" />
+              <span className="hidden sm:inline">Lock</span>
             </Btn>
           </span>
         }
       />
-      <main className="mx-auto grid w-full max-w-5xl gap-3 px-4 py-4 md:grid-cols-[1fr_360px]">
-        <section>
+
+      <main className="mx-auto grid w-full max-w-6xl gap-4 px-3.5 sm:px-6 py-4 md:grid-cols-[1fr_360px] pb-28 md:pb-8">
+        {/* Left Column: Product Search & Tile Grid */}
+        <section className="space-y-3">
           <div className="flex gap-2">
-            <input
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Search or type barcode + Enter"
-              onKeyDown={e => { if (e.key === "Enter" && search) handleBarcode(search); }}
-              className="min-h-12 flex-1 rounded-xl border border-stone-300 bg-white px-4 text-base outline-none placeholder:text-stone-400 focus:border-brand-600 focus:ring-2 focus:ring-brand-200"
-            />
-            <Btn size="lg" onClick={startCameraScan} className="px-5">Scan</Btn>
+            <div className="relative flex-1">
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search or type barcode + Enter"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && search) handleBarcode(search);
+                }}
+                className={`${inputCls} min-h-11 pl-3.5`}
+              />
+            </div>
+            <Btn size="md" variant="secondary" onClick={startCameraScan} className="shrink-0">
+              <IconCamera className="size-4" />
+              <span>Scan</span>
+            </Btn>
           </div>
-          <p className={`mt-1.5 min-h-5 text-sm ${scanMsg.startsWith("Added") ? "text-brand-700" : "text-stone-500"}`}>
-            {scanMsg || " "}
-          </p>
+
+          {scanMsg && (
+            <p
+              className={`text-xs font-semibold ${
+                scanMsg.startsWith("Added")
+                  ? "text-emerald-700 dark:text-emerald-400"
+                  : "text-stone-500"
+              }`}
+            >
+              {scanMsg}
+            </p>
+          )}
+
           {syncErr && (
-            <div className="mb-2">
-              <p className="text-sm font-medium text-red-600">{syncErr}</p>
+            <div className="rounded-xl bg-red-50 p-3 text-xs border border-red-200 dark:bg-red-950/40 dark:border-red-800">
+              <p className="font-semibold text-red-700 dark:text-red-300">{syncErr}</p>
               {!diag ? (
-                <button onClick={runDiag} className="text-xs font-semibold text-brand-800 underline underline-offset-2">
-                  Why? Check this till
+                <button
+                  onClick={runDiag}
+                  className="mt-1 font-bold text-stone-800 underline dark:text-stone-200"
+                >
+                  Diagnose connection
                 </button>
               ) : (
-                <div className="mt-1 rounded-xl bg-red-50 p-2 text-xs text-stone-700">
+                <div className="mt-2 text-stone-700 dark:text-stone-300 space-y-1">
                   <p>
-                    {diag.signedIn ? `Signed in as ${diag.email || diag.uid}` : "Not signed in"}
-                    {diag.signedIn && (diag.isMember ? ` • ${diag.role} of this shop` : " • NO seat in this shop")}
+                    {diag.signedIn
+                      ? `Signed in: ${diag.email || diag.uid}`
+                      : "Not signed in"}
                   </p>
-                  {diag.fix && <p className="mt-1 font-medium">{diag.fix}</p>}
-                  {diag.blocked && (
-                    <Btn size="sm" variant="secondary" onClick={() => router.push("/login")} className="mt-2">
-                      Reconnect this till
-                    </Btn>
-                  )}
+                  {diag.fix && <p className="font-semibold">{diag.fix}</p>}
                 </div>
               )}
             </div>
           )}
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-            {filtered.map(p => (
-              <button
-                key={p.id}
-                onClick={() => { add({ productId: p.id, name: p.name, price: p.price }); beep(true); }}
-                className="min-h-20 rounded-2xl border border-stone-200 bg-white p-3 text-left shadow-sm transition active:scale-[0.97] active:bg-brand-50"
-              >
-                <div className="line-clamp-2 text-[15px] font-semibold leading-snug">{p.name}</div>
-                <div className="mt-1 text-sm text-stone-500">₦{p.price} • {p.current_stock}</div>
-              </button>
-            ))}
+
+          {/* Product Grid */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+            {filtered.map((p) => {
+              const isLow = (p.current_stock ?? 0) <= (p.reorder_level ?? 5);
+              return (
+                <button
+                  key={p.id}
+                  onClick={() => {
+                    add({ productId: p.id, name: p.name, price: p.price });
+                    beep(true);
+                  }}
+                  className="flex flex-col justify-between p-3.5 rounded-xl border border-stone-200 bg-white text-left shadow-xs transition hover:border-brand-500 active:scale-[0.98] dark:border-stone-800 dark:bg-stone-900"
+                >
+                  <div>
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="text-xs font-bold text-stone-400">
+                        {p.is_pinned ? "PINNED" : "ITEM"}
+                      </span>
+                      {isLow && (
+                        <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded-md border border-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800">
+                          Low: {p.current_stock}
+                        </span>
+                      )}
+                    </div>
+                    <h4 className="mt-1.5 text-sm font-bold text-stone-900 dark:text-white line-clamp-2 leading-snug">
+                      {p.name}
+                    </h4>
+                  </div>
+                  <div className="mt-3 flex items-center justify-between pt-2 border-t border-stone-100 dark:border-stone-800">
+                    <span className="font-mono text-sm font-bold text-brand-700 dark:text-brand-400">
+                      ₦{p.price.toFixed(2)}
+                    </span>
+                    <span className="text-xs text-stone-500">Stock: {p.current_stock}</span>
+                  </div>
+                </button>
+              );
+            })}
           </div>
+
           {!filtered.length && (
-            <Empty>{q ? "Nothing matches — scan it to quick-add." : "No products in this shop yet — add them in Products."}</Empty>
+            <Empty>
+              {q
+                ? "No products match your search."
+                : "No products added yet. Add products in Inventory."}
+            </Empty>
           )}
         </section>
-        <section>
-          <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm md:sticky md:top-20">
-            <h2 className="font-bold">Basket ({lines.length})</h2>
-            <div className="mt-1 divide-y divide-stone-100">
-              {lines.map(l => (
-                <div key={l.productId} className="flex items-center gap-1.5 py-2">
-                  <span className="min-w-0 flex-1 truncate text-[15px]">{l.name} × {l.quantity}</span>
-                  <button onClick={() => dec(l.productId)} aria-label="decrease"
-                    className="flex size-10 items-center justify-center rounded-lg border border-stone-300 text-xl font-bold active:bg-stone-100">−</button>
-                  <button onClick={() => inc(l.productId)} aria-label="increase"
-                    className="flex size-10 items-center justify-center rounded-lg border border-stone-300 text-xl font-bold active:bg-stone-100">+</button>
-                  <span className="w-[72px] shrink-0 text-right text-sm font-semibold">₦{(l.price * l.quantity).toFixed(2)}</span>
+
+        {/* Right Column / Desktop Basket View */}
+        <section className="hidden md:block">
+          <Card className="p-4 sticky top-20">
+            <div className="flex items-center justify-between pb-3 border-b border-stone-200 dark:border-stone-800">
+              <h3 className="text-sm font-bold text-stone-900 dark:text-white flex items-center gap-2">
+                <IconSell className="size-4 text-brand-600" />
+                Current Basket
+              </h3>
+              <span className="text-xs font-semibold text-stone-500">
+                {totalLineCount} items
+              </span>
+            </div>
+
+            <div className="mt-3 space-y-2 max-h-80 overflow-y-auto pr-1">
+              {lines.length === 0 ? (
+                <div className="py-8 text-center text-xs text-stone-400">
+                  Basket is empty. Tap items or scan barcodes to start order.
+                </div>
+              ) : (
+                lines.map((l) => (
+                  <div
+                    key={l.productId}
+                    className="flex items-center justify-between p-2.5 rounded-xl border border-stone-200 bg-stone-50/50 dark:border-stone-800 dark:bg-stone-950/40"
+                  >
+                    <div className="min-w-0 flex-1 pr-2">
+                      <p className="text-xs font-bold text-stone-900 dark:text-stone-100 truncate">
+                        {l.name}
+                      </p>
+                      <p className="text-xs font-mono text-stone-500">
+                        ₦{(l.price * l.quantity).toFixed(2)}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => dec(l.productId)}
+                        className="flex size-7 items-center justify-center rounded-lg border border-stone-300 bg-white text-stone-700 hover:bg-stone-100 dark:border-stone-700 dark:bg-stone-800 dark:text-stone-200"
+                      >
+                        <IconMinus className="size-3" />
+                      </button>
+                      <span className="w-6 text-center font-mono text-xs font-bold">
+                        {l.quantity}
+                      </span>
+                      <button
+                        onClick={() => inc(l.productId)}
+                        className="flex size-7 items-center justify-center rounded-lg border border-stone-300 bg-white text-stone-700 hover:bg-stone-100 dark:border-stone-700 dark:bg-stone-800 dark:text-stone-200"
+                      >
+                        <IconPlus className="size-3" />
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="mt-4 pt-3 border-t border-stone-200 dark:border-stone-800 space-y-3">
+              <div className="flex items-baseline justify-between">
+                <span className="text-xs font-bold uppercase tracking-wider text-stone-500">
+                  Total
+                </span>
+                <span className="font-mono text-2xl font-extrabold text-stone-900 dark:text-white">
+                  ₦{total().toFixed(2)}
+                </span>
+              </div>
+
+              <Btn
+                size="lg"
+                onClick={confirmSale}
+                disabled={!lines.length}
+                className="w-full text-base font-bold"
+              >
+                Complete Sale (₦{total().toFixed(2)})
+              </Btn>
+
+              {toast && (
+                <div className="flex items-center justify-between rounded-xl bg-stone-900 p-3 text-xs text-white">
+                  <span>Sale Recorded ✓</span>
+                  <button
+                    onClick={undo}
+                    className="font-bold underline underline-offset-2 hover:text-stone-200"
+                  >
+                    Undo
+                  </button>
+                </div>
+              )}
+            </div>
+          </Card>
+        </section>
+      </main>
+
+      {/* Mobile Floating Cart Summary Bar */}
+      <div className="fixed inset-x-0 bottom-14 z-30 border-t border-stone-200 bg-white p-3 shadow-lg md:hidden dark:border-stone-800 dark:bg-stone-900">
+        <div className="flex items-center justify-between gap-3 max-w-md mx-auto">
+          <div>
+            <p className="text-xs font-bold text-stone-500">
+              Basket ({totalLineCount} items)
+            </p>
+            <p className="font-mono text-lg font-extrabold text-stone-900 dark:text-white">
+              ₦{total().toFixed(2)}
+            </p>
+          </div>
+
+          <Btn
+            size="md"
+            disabled={!lines.length}
+            onClick={() => setMobileCartOpen(true)}
+            className="px-5 font-bold"
+          >
+            Review & Pay
+          </Btn>
+        </div>
+      </div>
+
+      {/* Mobile Cart Modal Drawer */}
+      {mobileCartOpen && (
+        <div className="fixed inset-0 z-50 flex flex-col justify-end bg-stone-950/70 backdrop-blur-xs md:hidden">
+          <div className="w-full max-h-[85vh] overflow-y-auto rounded-t-3xl bg-white p-5 shadow-2xl dark:bg-stone-900 space-y-4">
+            <div className="flex items-center justify-between border-b border-stone-200 pb-3 dark:border-stone-800">
+              <h3 className="text-base font-bold text-stone-900 dark:text-white flex items-center gap-2">
+                <IconSell className="size-5 text-brand-600" />
+                Current Basket ({totalLineCount} items)
+              </h3>
+              <button
+                onClick={() => setMobileCartOpen(false)}
+                className="p-1 rounded-lg text-stone-400 hover:bg-stone-100 dark:hover:bg-stone-800"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-1">
+              {lines.map((l) => (
+                <div
+                  key={l.productId}
+                  className="flex items-center justify-between p-3 rounded-xl border border-stone-200 bg-stone-50 dark:border-stone-800 dark:bg-stone-950"
+                >
+                  <div className="min-w-0 flex-1 pr-2">
+                    <p className="text-sm font-bold text-stone-900 dark:text-stone-100 truncate">
+                      {l.name}
+                    </p>
+                    <p className="text-xs font-mono text-stone-500">
+                      ₦{(l.price * l.quantity).toFixed(2)}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => dec(l.productId)}
+                      className="flex size-8 items-center justify-center rounded-lg border border-stone-300 bg-white text-stone-700"
+                    >
+                      <IconMinus className="size-3.5" />
+                    </button>
+                    <span className="w-6 text-center font-mono text-sm font-bold">
+                      {l.quantity}
+                    </span>
+                    <button
+                      onClick={() => inc(l.productId)}
+                      className="flex size-8 items-center justify-center rounded-lg border border-stone-300 bg-white text-stone-700"
+                    >
+                      <IconPlus className="size-3.5" />
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
-            {!lines.length && <p className="py-3 text-center text-sm text-stone-400">Tap a tile or scan to start.</p>}
-            <div className="mt-2 flex items-baseline justify-between border-t border-stone-200 pt-2">
-              <span className="font-bold">Total</span>
-              <span className="text-2xl font-bold">₦{total().toFixed(2)}</span>
-            </div>
-            <Btn size="lg" onClick={confirmSale} disabled={!lines.length} className="mt-3 w-full text-xl">
-              Confirm
-            </Btn>
-            {toast && (
-              <div className="mt-2 flex items-center justify-between rounded-xl bg-stone-900 p-3 text-sm text-white">
-                <span>Sale saved</span>
-                <button onClick={undo} className="font-bold underline underline-offset-4">Undo</button>
+
+            <div className="pt-3 border-t border-stone-200 dark:border-stone-800 space-y-3">
+              <div className="flex items-baseline justify-between">
+                <span className="text-xs font-bold uppercase tracking-wider text-stone-500">
+                  Total Amount
+                </span>
+                <span className="font-mono text-2xl font-extrabold text-stone-900 dark:text-white">
+                  ₦{total().toFixed(2)}
+                </span>
               </div>
-            )}
-          </div>
-        </section>
-      </main>
-      {quickAdd && (
-        <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-sm rounded-3xl bg-white p-5">
-            <h3 className="font-bold">New item</h3>
-            <p className="mt-0.5 font-mono text-sm text-stone-500">{quickAdd.barcode}</p>
-            <p className="mt-1 text-xs text-stone-500">Quick-add — goes to owner review.</p>
-            <input value={qaName} onChange={e => setQaName(e.target.value)} placeholder="Product name" className={`${inputCls} mt-3`} />
-            <input value={qaPrice} onChange={e => setQaPrice(e.target.value)} placeholder="Price" inputMode="decimal" className={`${inputCls} mt-2`} />
-            <div className="mt-4 flex gap-2">
-              <Btn variant="secondary" onClick={() => setQuickAdd(null)} className="flex-1">Cancel</Btn>
-              <Btn onClick={quickAddSave} className="flex-1">Add & sell</Btn>
+
+              <Btn
+                size="lg"
+                onClick={confirmSale}
+                disabled={!lines.length}
+                className="w-full text-base font-bold"
+              >
+                Confirm & Record Sale
+              </Btn>
             </div>
           </div>
         </div>
       )}
-    </>
+
+      {/* Quick Add Unbarcoded Product Modal */}
+      {quickAdd && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/70 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl dark:bg-stone-900 border border-stone-200 dark:border-stone-800">
+            <h3 className="text-base font-bold text-stone-900 dark:text-white">
+              Unrecognized Barcode
+            </h3>
+            <p className="mt-1 font-mono text-xs text-stone-500">
+              Barcode: {quickAdd.barcode}
+            </p>
+
+            <div className="mt-4 space-y-3">
+              <input
+                value={qaName}
+                onChange={(e) => setQaName(e.target.value)}
+                placeholder="Product name"
+                className={inputCls}
+              />
+              <input
+                value={qaPrice}
+                onChange={(e) => setQaPrice(e.target.value)}
+                placeholder="Price (e.g. 500.00)"
+                inputMode="decimal"
+                className={inputCls}
+              />
+            </div>
+
+            <div className="mt-5 flex gap-2">
+              <Btn
+                variant="secondary"
+                onClick={() => setQuickAdd(null)}
+                className="flex-1"
+              >
+                Cancel
+              </Btn>
+              <Btn onClick={quickAddSave} className="flex-1">
+                Add & Add to Cart
+              </Btn>
+            </div>
+          </div>
+        </div>
+      )}
+    </OwnerShell>
   );
 }

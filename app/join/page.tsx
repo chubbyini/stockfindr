@@ -10,6 +10,7 @@ import { useSession } from "@/store/pos";
 import { tilldb } from "@/lib/db/dexie";
 import RouteLoading from "@/components/brand/route-loading";
 import { Btn, Card, Field, Page, ErrorText, inputCls } from "@/components/ui";
+import { IconStaff, IconCheck } from "@/components/icons";
 
 // Attendant onboarding v2: email-link identity FIRST (this is how we know
 // it's Emeka — Firebase uid), then invite code, then name + PIN.
@@ -69,7 +70,7 @@ export default function JoinPage() {
 
   async function join() {
     if (!user || !shopId || !name.trim() || pin.length < 4) {
-      setMsg("Name + a PIN of 4+ digits.");
+      setMsg("Name + a PIN of 4+ digits required.");
       return;
     }
     setBusy(true);
@@ -135,58 +136,95 @@ export default function JoinPage() {
 
   return (
     <Page>
-      <Card className="mt-4 p-6">
-        <h1 className="text-2xl font-bold tracking-tight">Join your shop</h1>
-        {!user ? (
-          <div className="mt-4 space-y-4">
-            <Field label="Your email" hint="We send a one-tap sign-in link. This is how your shop knows it's you.">
-              <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" type="email" className={inputCls} />
-            </Field>
-            <Btn size="lg" className="w-full" onClick={sendLink}>
-              {linkSent ? "Resend link" : "Send me a sign-in link"}
-            </Btn>
-            {linkSent && <p className="text-sm text-stone-600">Check your inbox and tap the link — then come back here.</p>}
-          </div>
-        ) : myShops.length > 0 && !shopId ? (
-          <div className="mt-4 space-y-2">
-            <p className="text-sm text-stone-600">Signed in as {user.email}. Your shops:</p>
-            {myShops.map((s) => (
-              <Btn key={s.id} variant="secondary" className="w-full" onClick={() => enter(s)}>
-                Enter {s.name}
-              </Btn>
-            ))}
-            <Btn variant="ghost" size="sm" onClick={() => setMyShops([])}>
-              Join a different shop with a code
-            </Btn>
-          </div>
-        ) : !shopId ? (
-          <div className="mt-4 space-y-4">
-            <p className="text-sm text-stone-600">Signed in as {user.email} ✓</p>
-            <Field label="Invite code" hint="8 letters from your owner — works once.">
-              <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="K7Q2M4XD" className={`${inputCls} text-center font-mono text-xl tracking-[0.3em] uppercase`} />
-            </Field>
-            <Btn size="lg" className="w-full" onClick={lookup}>Find my shop</Btn>
-          </div>
-        ) : (
-          <div className="mt-4 space-y-4">
-            <div className="rounded-xl bg-brand-50 p-3 text-sm text-brand-800">
-              Joining <b>{shopName}</b> as {user.email}
-              <br />
-              <span className="font-mono tracking-widest">Code {code}</span>
+      <div className="mx-auto max-w-md py-6 sm:py-12">
+        <Card className="p-6 sm:p-8">
+          <div className="flex flex-col items-center text-center">
+            <div className="flex size-14 items-center justify-center rounded-2xl bg-stone-900 text-white dark:bg-stone-100 dark:text-stone-900">
+              <IconStaff className="size-7" />
             </div>
-            <Field label="Your name">
-              <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Emeka" className={inputCls} />
-            </Field>
-            <Field label="Choose a 4-digit PIN" hint="For the shared counter — quick unlock, offline.">
-              <input value={pin} onChange={(e) => setPin(e.target.value)} placeholder="••••" inputMode="numeric" type="password" maxLength={6} className={`${inputCls} text-center text-2xl tracking-[0.5em]`} />
-            </Field>
-            <Btn size="lg" className="w-full" onClick={join} disabled={busy}>
-              {busy ? "Joining…" : "Join and open the till"}
-            </Btn>
+            <h1 className="mt-4 text-2xl font-bold tracking-tight text-stone-900 dark:text-white">Join Your Shop Team</h1>
+            <p className="mt-1 text-sm text-stone-500">Connect your account with an owner invite code.</p>
           </div>
-        )}
-        {msg && <ErrorText>{msg}</ErrorText>}
-      </Card>
+
+          {!user ? (
+            <div className="mt-6 space-y-4">
+              <Field label="Your Work Email" hint="We send a one-tap sign-in link. This confirms your staff identity.">
+                <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" type="email" className={inputCls} />
+              </Field>
+              <Btn size="lg" className="w-full font-semibold" onClick={sendLink}>
+                {linkSent ? "Resend Sign-In Link" : "Send Sign-In Link"}
+              </Btn>
+              {linkSent && <p className="text-sm text-stone-600 dark:text-stone-400">Check your email inbox and tap the link to continue setup.</p>}
+            </div>
+          ) : myShops.length > 0 && !shopId ? (
+            <div className="mt-6 space-y-3">
+              <div className="flex items-center gap-2 rounded-xl bg-stone-100 p-3 text-sm text-stone-700 dark:bg-stone-800 dark:text-stone-300">
+                <IconCheck className="size-4 text-emerald-600" />
+                <span>Signed in as <b>{user.email}</b></span>
+              </div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-stone-500">Your Registered Shops:</p>
+              {myShops.map((s) => (
+                <Btn key={s.id} variant="secondary" className="w-full justify-between" onClick={() => enter(s)}>
+                  <span>Enter {s.name}</span>
+                  <span className="text-xs font-normal text-stone-400">→</span>
+                </Btn>
+              ))}
+              <Btn variant="ghost" size="sm" className="w-full text-stone-500" onClick={() => setMyShops([])}>
+                Join a different shop with an invite code
+              </Btn>
+            </div>
+          ) : !shopId ? (
+            <div className="mt-6 space-y-4">
+              <div className="flex items-center gap-2 rounded-xl bg-emerald-50 p-3 text-sm font-medium text-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300">
+                <IconCheck className="size-4 text-emerald-600" />
+                <span>Signed in as {user.email}</span>
+              </div>
+              <Field label="Staff Invite Code" hint="8-character code provided by your shop owner.">
+                <input
+                  value={code}
+                  onChange={(e) => setCode(e.target.value)}
+                  placeholder="K7Q2M4XD"
+                  className={`${inputCls} text-center font-mono text-xl tracking-[0.3em] uppercase font-bold`}
+                />
+              </Field>
+              <Btn size="lg" className="w-full font-semibold" onClick={lookup}>
+                Verify Invite Code
+              </Btn>
+            </div>
+          ) : (
+            <div className="mt-6 space-y-4">
+              <div className="rounded-xl border border-stone-200 bg-stone-50 p-4 text-sm text-stone-900 dark:border-stone-800 dark:bg-stone-900 dark:text-stone-100">
+                <p className="font-semibold text-stone-700 dark:text-stone-300">Target Shop</p>
+                <p className="text-lg font-bold">{shopName}</p>
+                <p className="mt-1 text-xs font-mono text-stone-500">Invite Code: {code}</p>
+              </div>
+
+              <Field label="Your Full Name">
+                <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Emeka Okafor" className={inputCls} />
+              </Field>
+
+              <Field label="Set Your 4-Digit Counter PIN" hint="Used for daily register unlock on counter devices.">
+                <input
+                  value={pin}
+                  onChange={(e) => setPin(e.target.value)}
+                  placeholder="••••"
+                  inputMode="numeric"
+                  type="password"
+                  maxLength={6}
+                  className={`${inputCls} text-center text-2xl tracking-[0.5em] font-semibold`}
+                />
+              </Field>
+
+              <Btn size="lg" className="w-full font-semibold" onClick={join} disabled={busy}>
+                {busy ? "Joining Shop..." : "Join & Open Till"}
+              </Btn>
+            </div>
+          )}
+
+          {msg && <ErrorText>{msg}</ErrorText>}
+        </Card>
+      </div>
     </Page>
   );
 }
+

@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { sendEmailLink, completeEmailLink, useOwner } from "@/lib/auth/owner";
 import RouteLoading from "@/components/brand/route-loading";
 import { Btn, Card, Field, Page, ErrorText, inputCls } from "@/components/ui";
+import { IconStaff, IconLock } from "@/components/icons";
 
 // The attendant front door: email link (identity, once per device) → /join
 // figures out the shop. Daily counter unlock stays on /pin (name + PIN).
@@ -38,25 +39,54 @@ export default function LoginPage() {
 
   return (
     <Page>
-      <Card className="mt-4 p-6">
-        <h1 className="text-2xl font-bold tracking-tight">Attendant sign-in</h1>
-        <p className="mt-1 text-sm text-stone-500">
-          One-tap link, once per device. After that the counter uses your PIN.
-        </p>
-        <div className="mt-4 space-y-4">
-          <Field label="Your email">
-            <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" type="email" className={inputCls} />
-          </Field>
-          <Btn size="lg" className="w-full" onClick={send}>
-            {sent ? "Resend link" : "Send me a sign-in link"}
-          </Btn>
-          {sent && <p className="text-sm text-stone-600">Check your inbox and tap the link.</p>}
-        </div>
-        {msg && <ErrorText>{msg}</ErrorText>}
-        <p className="mt-4 text-center text-sm">
-          Counter phone? <a href="/pin" className="text-brand-800 underline underline-offset-4">Unlock with PIN</a>
-        </p>
-      </Card>
+      <div className="mx-auto max-w-md py-6 sm:py-12">
+        <Card className="p-6 sm:p-8">
+          <div className="flex flex-col items-center text-center">
+            <div className="flex size-14 items-center justify-center rounded-2xl bg-stone-900 text-white dark:bg-stone-100 dark:text-stone-900">
+              <IconStaff className="size-7" />
+            </div>
+            <h1 className="mt-4 text-2xl font-bold tracking-tight text-stone-900 dark:text-white">Staff Account Setup</h1>
+            <p className="mt-1 text-sm text-stone-500">
+              One-tap link for initial device registration. Daily sales counter uses PIN unlock.
+            </p>
+          </div>
+
+          <div className="mt-6 space-y-4">
+            <Field label="Work Email Address">
+              <input
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@example.com"
+                type="email"
+                className={inputCls}
+              />
+            </Field>
+
+            <Btn size="lg" className="w-full font-semibold" onClick={send}>
+              {sent ? "Resend Sign-In Link" : "Send Sign-In Link"}
+            </Btn>
+
+            {sent && (
+              <p className="text-center text-sm font-medium text-emerald-700 dark:text-emerald-400">
+                Check your email inbox and tap the link to complete authentication.
+              </p>
+            )}
+          </div>
+
+          {msg && <ErrorText>{msg}</ErrorText>}
+
+          <div className="mt-6 border-t border-stone-100 pt-6 text-center dark:border-stone-800">
+            <p className="text-xs text-stone-500">
+              Already configured this device?{" "}
+              <a href="/pin" className="inline-flex items-center gap-1 font-semibold text-stone-900 underline underline-offset-4 dark:text-stone-100">
+                <IconLock className="size-3.5 inline" />
+                <span>Unlock with PIN</span>
+              </a>
+            </p>
+          </div>
+        </Card>
+      </div>
     </Page>
   );
 }
+

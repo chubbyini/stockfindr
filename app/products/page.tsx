@@ -275,9 +275,9 @@ export default function ProductsPage() {
   const pending = items.filter(i => i.status === "pending_review");
 
   return (
-    <>
+    <OwnerShell>
       <TopBar title="Products" sub={`${items.length} in catalog`} />
-      <OwnerShell>
+      <div className="mx-auto max-w-6xl space-y-6 px-4 py-6 sm:px-6">
         <div className="grid gap-3 md:grid-cols-2">
           <Card>
             <h2 className="font-bold">Add one-by-one</h2>
@@ -380,6 +380,7 @@ export default function ProductsPage() {
                         ) : (
                           <Btn size="sm" variant="secondary" onClick={() => { setRestockId(p.id); setRestockQty(""); }}>Restock</Btn>
                         )}
+                        <Btn size="sm" variant="secondary" onClick={() => openReviewEdit(p)}>Edit</Btn>
                         <Btn size="sm" variant="ghost" onClick={() => setConfirmDeleteId(p.id)}>Delete</Btn>
                       </>
                     )}
@@ -390,7 +391,7 @@ export default function ProductsPage() {
           })}
           {!items.length && <div className="px-4 py-3"><Empty>No products yet — add one above.</Empty></div>}
         </Card>
-      </OwnerShell>
+      </div>
       {scanOpen && (
         <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/70 p-4">
           <div className="w-full max-w-sm rounded-3xl bg-white p-4">
@@ -450,6 +451,6 @@ export default function ProductsPage() {
           </div>
         </div>
       )}
-    </>
+    </OwnerShell>
   );
 }

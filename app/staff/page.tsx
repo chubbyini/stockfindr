@@ -10,6 +10,7 @@ import { useOwner } from "@/lib/auth/owner";
 import { hashPin } from "@/lib/auth/pin";
 import { makeInviteCode } from "@/lib/auth/invite";
 import { useSession } from "@/store/pos";
+import { tilldb } from "@/lib/db/dexie";
 import RouteLoading from "@/components/brand/route-loading";
 import { Badge, Btn, Card, Empty, ErrorText, inputCls, TopBar } from "@/components/ui";
 import OwnerShell from "@/components/owner-shell";
@@ -22,15 +23,23 @@ interface Invite {
 
 export default function StaffPage() {
   const { user, loading } = useOwner();
-  const { shopId } = useSession();
+  const { shopId, setSession } = useSession();
   const router = useRouter();
   const [staff, setStaff] = useState<{ id: string; name: string; email: string; role: string; active: boolean }[]>([]);
   const [invites, setInvites] = useState<Invite[]>([]);
   const [myPin, setMyPin] = useState("");
+  const [myName, setMyName] = useState("");
   const [msg, setMsg] = useState("");
 
   useEffect(() => {
-    if (!loading && user) refresh();
+    let active = true;
+    if (!loading && user) {
+      if (active) setMyName(user.displayName || user.email?.split("@")[0] || "Owner");
+      refresh();
+    }
+    return () => {
+      active = false;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, user, shopId]);
 
@@ -103,24 +112,48 @@ export default function StaffPage() {
   async function addMe() {
     if (!user || myPin.length < 4) { setMsg("Choose a PIN of 4+ digits."); return; }
     try {
+      const pinHash = await hashPin(myPin);
+      const nameToUse = myName.trim() || user.displayName || user.email?.split("@")[0] || "Owner";
+      const emailLc = (user.email || "").toLowerCase();
+
       await setDoc(doc(db, `shops/${shopId}/staff/${user.uid}`), {
         shopId,
-        name: user.email?.split("@")[0] || "Owner",
-        email: user.email || "",
+        name: nameToUse,
+        email: emailLc,
         role: "owner",
-        pinHash: await hashPin(myPin),
+        pinHash,
         active: true,
         updatedAt: Date.now(),
       });
+
+      await tilldb.staff.put({
+        id: user.uid,
+        shopId,
+        name: nameToUse,
+        email: emailLc,
+        role: "owner",
+        pinHash,
+        active: true,
+        updatedAt: Date.now(),
+      });
+
+      setSession({
+        staffId: user.uid,
+        staffName: nameToUse,
+        staffEmail: emailLc,
+        role: "owner",
+      });
+
       setMyPin("");
-      setMsg("Your counter PIN is set ✓ — use it on /pin like everyone else.");
+      setMsg("Your counter PIN is saved ✓ — use it on /pin to unlock registers offline.");
       refresh();
     } catch {
-      setMsg("Couldn't save the PIN.");
+      setMsg("Couldn't save the PIN — check your connection.");
     }
   }
 
-  async function setActive(id: string, active: boolean) {    try {
+  async function setActive(id: string, active: boolean) {
+    try {
       const { updateDoc } = await import("firebase/firestore");
       await updateDoc(doc(db, `shops/${shopId}/staff/${id}`), { active });
       refresh();
@@ -136,62 +169,87 @@ export default function StaffPage() {
   }
 
   return (
-    <>
+    <OwnerShell>
       <TopBar title="Staff & invites" sub="Team access for this shop" />
-      <OwnerShell>
-      <h1 className="text-xl font-bold tracking-tight">Staff & invites</h1>
-      <Card className="mt-3">
-        <h2 className="font-bold">Your counter PIN</h2>
-        <p className="mt-1 text-xs text-stone-500">Sell at the counter yourself — same unlock as attendants.</p>
-        <div className="mt-2 flex gap-2">
-          <input value={myPin} onChange={(e) => setMyPin(e.target.value)} placeholder="4-digit PIN" inputMode="numeric" type="password" maxLength={6} className={`${inputCls} text-center tracking-[0.4em]`} />
-          <Btn onClick={addMe} className="shrink-0">Save PIN</Btn>
-        </div>
-      </Card>
-      <Card className="mt-3">
-        <div className="flex items-center justify-between gap-2">
-          <div>
-            <h2 className="font-bold">Invite codes</h2>
-            <p className="text-xs text-stone-500">Single-use • expires in 7 days • tell it or send it</p>
+      <div className="mx-auto max-w-6xl space-y-6 px-4 py-6 sm:px-6">
+        <h1 className="text-xl font-bold tracking-tight">Staff & invites</h1>
+        <Card className="mt-3">
+          <h2 className="font-bold">Your owner counter PIN</h2>
+          <p className="mt-1 text-xs text-stone-500">
+            Set your display name & 4-digit PIN to unlock registers offline and sell at the counter.
+          </p>
+          <div className="mt-3 space-y-3">
+            <input
+              value={myName}
+              onChange={(e) => setMyName(e.target.value)}
+              placeholder="Your Name (e.g. Chief Owner)"
+              className={inputCls}
+            />
+            <div className="flex gap-2">
+              <input
+                value={myPin}
+                onChange={(e) => setMyPin(e.target.value)}
+                placeholder="4-digit PIN"
+                inputMode="numeric"
+                type="password"
+                maxLength={6}
+                className={`${inputCls} text-center tracking-[0.4em]`}
+              />
+              <Btn onClick={addMe} className="shrink-0">Save PIN</Btn>
+            </div>
           </div>
-          <Btn size="sm" onClick={createInvite}>New invite</Btn>
-        </div>
-        <div className="mt-3 space-y-2">
-          {invites.map((i) => (
-            <div key={i.code} className="flex items-center justify-between gap-2 rounded-xl bg-stone-50 px-3 py-2">
-              <span className="font-mono text-lg font-bold tracking-[0.25em]">{i.code}</span>
-              <span className="flex gap-2">
-                <Btn size="sm" variant="secondary" onClick={() => copyCode(i.code)}>Copy</Btn>
-                <Btn size="sm" variant="ghost" onClick={() => revoke(i.code)}>Revoke</Btn>
-              </span>
+        </Card>
+
+        <Card className="mt-3">
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <h2 className="font-bold">Invite codes</h2>
+              <p className="text-xs text-stone-500">Single-use • expires in 7 days • tell it or send it</p>
             </div>
-          ))}
-          {!invites.length && <Empty>No pending invites. Create one for each attendant.</Empty>}
-        </div>
-      </Card>
-      <Card className="mt-3">
-        <h2 className="font-bold">Team — bound to this shop</h2>
-        <p className="mt-0.5 text-xs text-stone-500">Login identity (email) + membership decide who can sell here — not just the PIN.</p>
-        <div className="mt-2 divide-y divide-stone-100">
-          {staff.map((s) => (
-            <div key={s.id} className="flex items-center justify-between gap-2 py-2.5">
-              <span className="min-w-0">
-                <span className="flex items-center gap-2">
-                  <b>{s.name}</b>
-                  <Badge tone={s.active ? "green" : "stone"}>{s.active ? s.role : "off"}</Badge>
+            <Btn size="sm" onClick={createInvite}>New invite</Btn>
+          </div>
+          <div className="mt-3 space-y-2">
+            {invites.map((i) => (
+              <div key={i.code} className="flex items-center justify-between gap-2 rounded-xl bg-stone-50 px-3 py-2">
+                <span className="font-mono text-lg font-bold tracking-[0.25em]">{i.code}</span>
+                <span className="flex gap-2">
+                  <Btn size="sm" variant="secondary" onClick={() => copyCode(i.code)}>Copy</Btn>
+                  <Btn size="sm" variant="ghost" onClick={() => revoke(i.code)}>Revoke</Btn>
                 </span>
-                {s.email ? <span className="block truncate text-xs text-stone-500">{s.email}</span> : null}
-              </span>
-              <Btn size="sm" variant="ghost" onClick={() => setActive(s.id, !s.active)}>
-                {s.active ? "Deactivate" : "Activate"}
-              </Btn>
-            </div>
-          ))}
-          {!staff.length && <Empty>Nobody yet — share an invite code above.</Empty>}
-        </div>
-      </Card>
-      {msg && <ErrorText>{msg}</ErrorText>}
-      </OwnerShell>
-    </>
+              </div>
+            ))}
+            {!invites.length && <Empty>No pending invites. Create one for each attendant.</Empty>}
+          </div>
+        </Card>
+
+        <Card className="mt-3">
+          <h2 className="font-bold">Team — bound to this shop</h2>
+          <p className="mt-0.5 text-xs text-stone-500">Login identity (email) + membership decide who can sell here — not just the PIN.</p>
+          <div className="mt-2 divide-y divide-stone-100">
+            {staff.map((s) => (
+              <div key={s.id} className="flex items-center justify-between gap-2 py-2.5">
+                <span className="min-w-0">
+                  <span className="flex items-center gap-2">
+                    <b>{s.name}</b>
+                    <Badge tone={s.role === "owner" ? "brand" : s.active ? "green" : "stone"}>
+                      {s.role === "owner" ? "Owner" : s.active ? "Attendant" : "off"}
+                    </Badge>
+                  </span>
+                  {s.email ? <span className="block truncate text-xs text-stone-500">{s.email}</span> : null}
+                </span>
+                {s.role !== "owner" && (
+                  <Btn size="sm" variant="ghost" onClick={() => setActive(s.id, !s.active)}>
+                    {s.active ? "Deactivate" : "Activate"}
+                  </Btn>
+                )}
+              </div>
+            ))}
+            {!staff.length && <Empty>Nobody yet — share an invite code above.</Empty>}
+          </div>
+        </Card>
+
+        {msg && <ErrorText>{msg}</ErrorText>}
+      </div>
+    </OwnerShell>
   );
 }

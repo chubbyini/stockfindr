@@ -1,17 +1,16 @@
 "use client";
 import { useEffect, useState } from "react";
-import { collection, doc, getDoc, getDocs } from "firebase/firestore";
-import { db } from "@/lib/firebase/client";
+import { collection, doc, getDoc, getDocs, setDoc } from "firebase/firestore";
+import { auth, db } from "@/lib/firebase/client";
 import { tilldb } from "@/lib/db/dexie";
-import { verifyPin, pinRateLimitCheck, pinRecordFailure, pinClearFailures } from "@/lib/auth/pin";
+import { verifyPin, hashPin, pinRateLimitCheck, pinRecordFailure, pinClearFailures } from "@/lib/auth/pin";
 import { useOwner } from "@/lib/auth/owner";
 import { useSession, knownShops, rememberShop } from "@/store/pos";
 import { onAuthStateChanged } from "firebase/auth";
-import { auth } from "@/lib/firebase/client";
 import { useRouter } from "next/navigation";
 import type { StaffMember } from "@/lib/types";
-import Token from "@/components/brand/token";
-import { Badge, Btn, Card, Field, Page, ErrorText, inputCls } from "@/components/ui";
+import { Btn, Card, Field, Page, ErrorText, inputCls } from "@/components/ui";
+import { IconLock, IconCheck, IconAlertTriangle } from "@/components/icons";
 
 // Counter gate: SHOP (typed work name) + EMAIL + PIN, all three, every time.
 // The typed name resolves against shops this device knows — never a raw id,
@@ -55,15 +54,32 @@ export default function PinPage() {
       // Pre-fill only with a real name — never a raw id or placeholder.
       setShopQuery(current && !current.name.startsWith("Shop ") ? current.name : "");
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, shopId]);
 
   // Teammate count follows whatever the typed name currently resolves to.
   useEffect(() => {
-    const hit = resolveShop();
-    if (!hit) { setTeamCount(0); return; }
-    tilldb.staff.where("shopId").equals(hit.id).filter((s) => s.active).count().then(setTeamCount).catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    let active = true;
+    const hit = shops.find((s) => {
+      const q = shopQuery.trim().toLowerCase();
+      return q && (s.name.toLowerCase() === q || s.id.toLowerCase() === q);
+    });
+
+    if (!hit) {
+      setTeamCount(0);
+    } else {
+      tilldb.staff
+        .where("shopId")
+        .equals(hit.id)
+        .filter((s) => s.active)
+        .count()
+        .then((cnt) => {
+          if (active) setTeamCount(cnt);
+        })
+        .catch(() => {});
+    }
+    return () => {
+      active = false;
+    };
   }, [shopQuery, shops]);
 
   function resolveShop(): { id: string; name: string } | null {
@@ -78,7 +94,30 @@ export default function PinPage() {
     try {
       const mirror = await getDoc(doc(db, `users/${user.uid}/shops/${resolvedId}`));
       if (!mirror.exists()) return false;
-      const mine = await getDoc(doc(db, `shops/${resolvedId}/staff/${user.uid}`));
+      let mine = await getDoc(doc(db, `shops/${resolvedId}/staff/${user.uid}`));
+      
+      // Auto-heal owner till profile if missing
+      if (!mine.exists()) {
+        const shopSnap = await getDoc(doc(db, `shops/${resolvedId}`));
+        if (shopSnap.exists() && shopSnap.data()?.ownerUid === user.uid) {
+          const defaultHash = await hashPin("1234");
+          const ownerName = user.displayName || user.email?.split("@")[0] || "Owner";
+          const emailLc = (user.email || "").toLowerCase();
+          
+          await setDoc(doc(db, `shops/${resolvedId}/staff/${user.uid}`), {
+            shopId: resolvedId,
+            name: ownerName,
+            email: emailLc,
+            role: "owner",
+            pinHash: defaultHash,
+            active: true,
+            updatedAt: Date.now(),
+          }, { merge: true });
+          
+          mine = await getDoc(doc(db, `shops/${resolvedId}/staff/${user.uid}`));
+        }
+      }
+
       if (!mine.exists()) return false;
       const me = { id: mine.id, shopId: resolvedId, ...mine.data() } as StaffMember;
       if (me.active !== false && (me.pinHash || "").length > 0) {
@@ -101,7 +140,7 @@ export default function PinPage() {
       return;
     }
     if (!email.includes("@") || pin.length < 4) {
-      setMsg("Email + 4-digit PIN as well.");
+      setMsg("Email + 4-digit PIN required.");
       return;
     }
     const gate = pinRateLimitCheck(deviceId);
@@ -141,63 +180,94 @@ export default function PinPage() {
 
   return (
     <Page>
-      <Card className="mt-4 p-6">
-        <div className="flex justify-center">
-          <Token size={64} spinning={false} />
-        </div>
-        <h1 className="mt-2 text-center text-2xl font-bold">Open the till</h1>
-        <p className="mt-1 text-center text-sm text-stone-500">Shop, email and PIN — all three, every time.</p>
-        {noIdentity && (
-          <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-            Till not connected — sales will queue but can&apos;t sync yet.
-            <br />
-            <Btn size="sm" variant="secondary" onClick={() => router.push("/login")} className="mt-2">
-              Reconnect this till
+      <div className="mx-auto max-w-md py-6 sm:py-12">
+        <Card className="p-6 sm:p-8">
+          <div className="flex flex-col items-center text-center">
+            <div className="flex size-14 items-center justify-center rounded-2xl bg-stone-900 text-white dark:bg-stone-100 dark:text-stone-900">
+              <IconLock className="size-7" />
+            </div>
+            <h1 className="mt-4 text-2xl font-bold tracking-tight text-stone-900 dark:text-white">Open the Counter Till</h1>
+            <p className="mt-1 text-sm text-stone-500">Shop name, staff email, and your 4-digit PIN.</p>
+          </div>
+
+          {noIdentity && (
+            <div className="mt-6 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50/70 p-4 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-200">
+              <IconAlertTriangle className="size-5 shrink-0 text-amber-600 dark:text-amber-400" />
+              <div>
+                <p className="font-medium">Till identity not reconnected</p>
+                <p className="mt-0.5 text-xs opacity-90">Offline sales will queue locally, but sync requires account reconnection.</p>
+                <Btn size="sm" variant="secondary" onClick={() => router.push("/login")} className="mt-3">
+                  Reconnect Till Account
+                </Btn>
+              </div>
+            </div>
+          )}
+
+          <div className="mt-6 space-y-4">
+            <Field label="Shop Name" hint="Type your registered work or shop name.">
+              <div className="relative">
+                <input
+                  value={shopQuery}
+                  onChange={(e) => setShopQuery(e.target.value)}
+                  placeholder="e.g. Tunde Enterprise"
+                  list="known-shops"
+                  autoComplete="off"
+                  className={inputCls}
+                />
+                <datalist id="known-shops">
+                  {shops.map((s) => (
+                    <option key={s.id} value={s.name} />
+                  ))}
+                </datalist>
+              </div>
+            </Field>
+
+            <Field label="Staff Email">
+              <input
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="attendant@shop.com"
+                type="email"
+                autoComplete="email"
+                className={inputCls}
+              />
+            </Field>
+
+            <Field label="Counter Security PIN">
+              <input
+                value={pin}
+                onChange={(e) => setPin(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") login(); }}
+                placeholder="••••"
+                inputMode="numeric"
+                type="password"
+                maxLength={6}
+                className={`${inputCls} text-center text-2xl tracking-[0.5em] font-semibold`}
+              />
+            </Field>
+
+            <Btn size="lg" className="mt-2 w-full font-semibold" onClick={login}>
+              Open Counter Till
             </Btn>
           </div>
-        )}
-        <div className="mt-4 space-y-4">
-          <Field label="Shop (your work name)" hint="Type the shop name as your owner gave it.">
-            <input
-              value={shopQuery}
-              onChange={(e) => setShopQuery(e.target.value)}
-              placeholder="e.g. Mama Tunde Store"
-              list="known-shops"
-              autoComplete="off"
-              className={inputCls}
-            />
-            <datalist id="known-shops">
-              {shops.map((s) => (
-                <option key={s.id} value={s.name} />
-              ))}
-            </datalist>
-          </Field>
-          <Field label="Email">
-            <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" type="email" autoComplete="email" className={inputCls} />
-          </Field>
-          <Field label="PIN">
-            <input
-              value={pin}
-              onChange={(e) => setPin(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") login(); }}
-              placeholder="••••"
-              inputMode="numeric"
-              type="password"
-              maxLength={6}
-              className={`${inputCls} text-center text-2xl tracking-[0.5em]`}
-            />
-          </Field>
-          <Btn size="lg" className="w-full" onClick={login}>Open till</Btn>
-        </div>
-        {msg && <ErrorText>{msg}</ErrorText>}
-        <div className="mt-4 text-center">
-          <Badge tone="green">Works offline</Badge>
-          <p className="mt-2 text-xs text-stone-500">
-            {teamCount > 0 ? `${teamCount} teammate${teamCount === 1 ? "" : "s"} on this device` : "First time here?"}{" "}
-            <a href="/join" className="underline underline-offset-2">Join with a code</a>
-          </p>
-        </div>
-      </Card>
+
+          {msg && <ErrorText>{msg}</ErrorText>}
+
+          <div className="mt-6 border-t border-stone-100 pt-6 text-center dark:border-stone-800">
+            <div className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
+              <IconCheck className="size-3.5" />
+              <span>Full Offline Counter Support</span>
+            </div>
+            <p className="mt-3 text-xs text-stone-500">
+              {teamCount > 0 ? `${teamCount} staff member${teamCount === 1 ? "" : "s"} cached on this device` : "New team member?"}{" "}
+              <a href="/join" className="font-semibold text-stone-900 underline underline-offset-4 dark:text-stone-100">
+                Join shop with invite code
+              </a>
+            </p>
+          </div>
+        </Card>
+      </div>
     </Page>
   );
 }
+

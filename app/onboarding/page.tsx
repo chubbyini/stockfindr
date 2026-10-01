@@ -4,7 +4,9 @@ import { useRouter } from "next/navigation";
 import { collection, doc, writeBatch, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useOwner, ownerSignOut } from "@/lib/auth/owner";
+import { hashPin } from "@/lib/auth/pin";
 import { useSession } from "@/store/pos";
+import { tilldb } from "@/lib/db/dexie";
 import RouteLoading from "@/components/brand/route-loading";
 import { Btn, Card, Field, Page, ErrorText, inputCls } from "@/components/ui";
 
@@ -15,6 +17,8 @@ export default function OnboardingPage() {
   const { setSession } = useSession();
   const router = useRouter();
   const [name, setName] = useState("");
+  const [ownerName, setOwnerName] = useState("");
+  const [pin, setPin] = useState("1234");
   const [timezone, setTimezone] = useState("Africa/Lagos");
   const [currency, setCurrency] = useState("NGN");
   const [msg, setMsg] = useState("");
@@ -28,10 +32,12 @@ export default function OnboardingPage() {
 
   async function createShop() {
     if (!name.trim()) { setMsg("Give your shop a name."); return; }
+    if (pin.length < 4) { setMsg("Your owner PIN must be 4+ digits."); return; }
     setBusy(true);
     try {
       const shopRef = doc(collection(db, "shops"));
       const batch = writeBatch(db);
+      
       batch.set(shopRef, {
         name: name.trim(),
         ownerUid: user!.uid,
@@ -40,16 +46,52 @@ export default function OnboardingPage() {
         inviteCodes: [],
         createdAt: serverTimestamp(),
       });
-      // Private index so the owner can list their shops (top-level shops
-      // has no list rule — strangers must never enumerate shops).
-      // No member doc: shop.ownerUid is the founder's credential, and batch
-      // sibling writes are invisible to each other in rules evaluation.
+
+      // Private owner index
       batch.set(doc(db, `users/${user!.uid}/shops/${shopRef.id}`), {
         name: name.trim(),
+        role: "owner",
         createdAt: serverTimestamp(),
       });
+
+      // Create owner staff/till account
+      const pinHash = await hashPin(pin.trim());
+      const displayName = ownerName.trim() || user!.displayName || user!.email?.split("@")[0] || "Owner";
+      const emailLc = (user!.email || "").toLowerCase();
+
+      batch.set(doc(db, `shops/${shopRef.id}/staff/${user!.uid}`), {
+        shopId: shopRef.id,
+        name: displayName,
+        email: emailLc,
+        role: "owner",
+        pinHash,
+        active: true,
+        updatedAt: Date.now(),
+      });
+
       await batch.commit();
-      setSession({ shopId: shopRef.id, shopName: name.trim() });
+
+      // Save locally to Dexie
+      await tilldb.staff.put({
+        id: user!.uid,
+        shopId: shopRef.id,
+        name: displayName,
+        email: emailLc,
+        role: "owner",
+        pinHash,
+        active: true,
+        updatedAt: Date.now(),
+      });
+
+      setSession({
+        shopId: shopRef.id,
+        shopName: name.trim(),
+        staffId: user!.uid,
+        staffName: displayName,
+        staffEmail: emailLc,
+        role: "owner",
+      });
+
       router.push("/dashboard");
     } catch (e) {
       setMsg(e instanceof Error ? e.message : "Couldn't create the shop.");
@@ -76,6 +118,28 @@ export default function OnboardingPage() {
               className={inputCls}
             />
           </Field>
+
+          <Field label="Your Name (Owner)">
+            <input
+              value={ownerName}
+              onChange={(e) => setOwnerName(e.target.value)}
+              placeholder={user.displayName || user.email?.split("@")[0] || "Owner"}
+              className={inputCls}
+            />
+          </Field>
+
+          <Field label="Your 4-Digit Owner PIN" hint="For unlocking registers offline & selling at the counter.">
+            <input
+              value={pin}
+              onChange={(e) => setPin(e.target.value)}
+              placeholder="1234"
+              inputMode="numeric"
+              type="password"
+              maxLength={6}
+              className={`${inputCls} text-center font-mono text-xl tracking-[0.4em]`}
+            />
+          </Field>
+
           <div className="flex gap-3">
             <Field label="Timezone">
               <select value={timezone} onChange={(e) => setTimezone(e.target.value)} className={inputCls}>
@@ -86,9 +150,11 @@ export default function OnboardingPage() {
               <input value={currency} onChange={(e) => setCurrency(e.target.value.toUpperCase())} placeholder="NGN" maxLength={3} className={`${inputCls} w-24`} />
             </Field>
           </div>
+
           <Btn size="lg" className="w-full" onClick={createShop} disabled={busy}>
-            {busy ? "Creating…" : "Create shop"}
+            {busy ? "Creating…" : "Create shop & launch till"}
           </Btn>
+
           {msg && <ErrorText>{msg}</ErrorText>}
         </div>
       </Card>
