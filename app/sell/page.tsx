@@ -95,12 +95,27 @@ export default function SellPage() {
             const name =
               saved || fbUser.displayName || fbUser.email?.split("@")[0] || "Owner";
             localStorage.setItem("tilltrail-counter-name", name);
-            setSession({ staffId: `owner-${fbUser.uid}`, staffName: name });
+            setSession({
+              role: "owner",
+              staffId: `owner-${fbUser.uid}`,
+              staffName: name,
+              staffEmail: fbUser.email || "",
+            });
             return;
           }
         } catch {
-          /* fall through to /pin */
+          /* fall through */
         }
+        // Fallback for authenticated owner even if shop read errors
+        const saved = localStorage.getItem("tilltrail-counter-name");
+        const name = saved || fbUser.displayName || fbUser.email?.split("@")[0] || "Owner";
+        setSession({
+          role: "owner",
+          staffId: `owner-${fbUser.uid}`,
+          staffName: name,
+          staffEmail: fbUser.email || "",
+        });
+        return;
       }
       router.push("/pin");
     })();

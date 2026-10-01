@@ -6,22 +6,57 @@ import { db } from "@/lib/firebase/client";
 import { collection, getDocs, query, orderBy, limit } from "firebase/firestore";
 import { useSession } from "@/store/pos";
 import ShopSwitcher from "@/components/shop-switcher";
-import { Badge, Card, Empty, Stat, TopBar, Btn } from "@/components/ui";
+import { Badge, Card, Empty, Stat, TopBar } from "@/components/ui";
 import OwnerShell from "@/components/owner-shell";
 import { EnsureOwnerTillAccount } from "@/components/owner-pin-setup";
+import { useRouter } from "next/navigation";
+import type { Product } from "@/lib/types";
+import { useOwner } from "@/lib/auth/owner";
 import {
   IconSell,
   IconProducts,
   IconStaff,
-  IconLock,
   IconAlertTriangle,
   IconAnalytics,
 } from "@/components/icons";
 
+interface DashboardSale {
+  id: string;
+  total: number;
+  occurred_at: number;
+  staff_id: string;
+  status?: string;
+}
+
 export default function DashboardPage() {
-  const { shopId } = useSession();
-  const [sales, setSales] = useState<any[]>([]);
-  const [products, setProducts] = useState<any[]>([]);
+  const { user, loading: fbLoading } = useOwner();
+  const { shopId, role, setSession } = useSession();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (fbLoading) return;
+    if (user) {
+      if (role !== "owner") {
+        setSession({
+          role: "owner",
+          staffId: `owner-${user.uid}`,
+          staffName: user.displayName || user.email?.split("@")[0] || "Owner",
+          staffEmail: user.email || "",
+        });
+      }
+      return;
+    }
+    if (role === "attendant") {
+      router.replace("/attendant");
+      return;
+    }
+    if (!user && !shopId) {
+      router.replace("/login");
+    }
+  }, [user, fbLoading, role, shopId, router, setSession]);
+
+  const [sales, setSales] = useState<DashboardSale[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
   const [staffNames, setStaffNames] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -34,10 +69,21 @@ export default function DashboardPage() {
             limit(50)
           )
         );
-        setSales(s.docs.map((d) => ({ id: d.id, ...d.data() })));
+        setSales(
+          s.docs.map((d) => {
+            const data = d.data();
+            return {
+              id: d.id,
+              total: Number(data.total || 0),
+              occurred_at: Number(data.occurred_at || data.occurredAt || 0),
+              staff_id: String(data.staff_id || data.staffId || "unknown"),
+              status: data.status as string | undefined,
+            };
+          })
+        );
 
         const p = await getDocs(collection(db, `shops/${shopId}/products`));
-        setProducts(p.docs.map((d) => ({ id: d.id, ...d.data() })));
+        setProducts(p.docs.map((d) => ({ id: d.id, ...d.data() } as Product)));
 
         const st = await getDocs(collection(db, `shops/${shopId}/staff`));
         const m: Record<string, string> = {};

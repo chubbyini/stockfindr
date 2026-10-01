@@ -65,7 +65,9 @@ export default function PinPage() {
     });
 
     if (!hit) {
-      setTeamCount(0);
+      Promise.resolve().then(() => {
+        if (active) setTeamCount(0);
+      });
     } else {
       tilldb.staff
         .where("shopId")
@@ -175,7 +177,11 @@ export default function PinPage() {
       staffEmail: ok.email || "",
       role: ok.role,
     });
-    router.push("/sell");
+    if (ok.role === "owner") {
+      router.push("/dashboard");
+    } else {
+      router.push("/attendant");
+    }
   }
 
   return (
@@ -190,7 +196,31 @@ export default function PinPage() {
             <p className="mt-1 text-sm text-stone-500">Shop name, staff email, and your 4-digit PIN.</p>
           </div>
 
-          {noIdentity && (
+          {user && (
+            <div className="mt-6 flex flex-col gap-2 rounded-xl border border-emerald-200 bg-emerald-50/70 p-4 text-sm text-emerald-900 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-200">
+              <div>
+                <p className="font-semibold">Signed in as Shop Owner</p>
+                <p className="text-xs opacity-90">{user.email}</p>
+              </div>
+              <Btn
+                size="sm"
+                className="mt-1 w-full font-semibold"
+                onClick={() => {
+                  setSession({
+                    role: "owner",
+                    staffId: `owner-${user.uid}`,
+                    staffName: user.displayName || user.email?.split("@")[0] || "Owner",
+                    staffEmail: user.email || "",
+                  });
+                  router.push("/dashboard");
+                }}
+              >
+                Go to Owner Dashboard
+              </Btn>
+            </div>
+          )}
+
+          {noIdentity && !user && (
             <div className="mt-6 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50/70 p-4 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-200">
               <IconAlertTriangle className="size-5 shrink-0 text-amber-600 dark:text-amber-400" />
               <div>
@@ -262,6 +292,12 @@ export default function PinPage() {
               {teamCount > 0 ? `${teamCount} staff member${teamCount === 1 ? "" : "s"} cached on this device` : "New team member?"}{" "}
               <a href="/join" className="font-semibold text-stone-900 underline underline-offset-4 dark:text-stone-100">
                 Join shop with invite code
+              </a>
+            </p>
+            <p className="mt-2 text-xs text-stone-500">
+              Are you the shop owner?{" "}
+              <a href="/login" className="font-semibold text-stone-900 underline underline-offset-4 dark:text-stone-100">
+                Sign in with Google / Email
               </a>
             </p>
           </div>

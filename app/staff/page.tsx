@@ -23,8 +23,31 @@ interface Invite {
 
 export default function StaffPage() {
   const { user, loading } = useOwner();
-  const { shopId, setSession } = useSession();
+  const { shopId, role, setSession } = useSession();
   const router = useRouter();
+
+  useEffect(() => {
+    if (loading) return;
+    if (user) {
+      if (role !== "owner") {
+        setSession({
+          role: "owner",
+          staffId: `owner-${user.uid}`,
+          staffName: user.displayName || user.email?.split("@")[0] || "Owner",
+          staffEmail: user.email || "",
+        });
+      }
+      return;
+    }
+    if (role === "attendant") {
+      router.replace("/attendant");
+      return;
+    }
+    if (!user && !shopId) {
+      router.replace("/login");
+    }
+  }, [loading, user, role, shopId, router, setSession]);
+
   const [staff, setStaff] = useState<{ id: string; name: string; email: string; role: string; active: boolean }[]>([]);
   const [invites, setInvites] = useState<Invite[]>([]);
   const [myPin, setMyPin] = useState("");
@@ -34,7 +57,9 @@ export default function StaffPage() {
   useEffect(() => {
     let active = true;
     if (!loading && user) {
-      if (active) setMyName(user.displayName || user.email?.split("@")[0] || "Owner");
+      Promise.resolve().then(() => {
+        if (active) setMyName(user.displayName || user.email?.split("@")[0] || "Owner");
+      });
       refresh();
     }
     return () => {

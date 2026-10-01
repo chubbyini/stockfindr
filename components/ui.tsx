@@ -139,12 +139,14 @@ export function Stat({
   tone = "stone",
   icon,
   trend,
+  sub,
 }: {
   label: string;
   value: string;
   tone?: keyof typeof badgeTones;
   icon?: ReactNode;
   trend?: string;
+  sub?: string;
 }) {
   return (
     <Card className="p-4">
@@ -159,7 +161,7 @@ export function Stat({
       >
         {value}
       </div>
-      {trend && <p className="mt-1 text-xs text-stone-500 dark:text-stone-400">{trend}</p>}
+      {(trend || sub) && <p className="mt-1 text-xs text-stone-500 dark:text-stone-400">{trend || sub}</p>}
     </Card>
   );
 }

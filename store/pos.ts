@@ -104,10 +104,10 @@ function getDeviceId(): string {
 export const useSession = create<SessionState>((set) => ({
   shopId: typeof window !== "undefined" ? localStorage.getItem("tilltrail-shop") || "demo-shop" : "demo-shop",
   shopName: typeof window !== "undefined" ? localStorage.getItem("tilltrail-shop-name") || "" : "",
-  staffId: "",
-  staffName: "",
-  staffEmail: "",
-  role: "attendant",
+  staffId: typeof window !== "undefined" ? localStorage.getItem("tilltrail-staff-id") || "" : "",
+  staffName: typeof window !== "undefined" ? localStorage.getItem("tilltrail-staff-name") || "" : "",
+  staffEmail: typeof window !== "undefined" ? localStorage.getItem("tilltrail-staff-email") || "" : "",
+  role: typeof window !== "undefined" ? (localStorage.getItem("tilltrail-role") as "owner" | "attendant") || "owner" : "owner",
   deviceId: typeof window !== "undefined" ? getDeviceId() : "server",
   setSession: (s) =>
     set((prev) => {
@@ -115,9 +115,20 @@ export const useSession = create<SessionState>((set) => ({
       try {
         localStorage.setItem("tilltrail-shop", next.shopId);
         localStorage.setItem("tilltrail-shop-name", next.shopName || "");
+        if (next.staffId !== undefined) localStorage.setItem("tilltrail-staff-id", next.staffId);
+        if (next.staffName !== undefined) localStorage.setItem("tilltrail-staff-name", next.staffName);
+        if (next.staffEmail !== undefined) localStorage.setItem("tilltrail-staff-email", next.staffEmail);
+        if (next.role !== undefined) localStorage.setItem("tilltrail-role", next.role);
         if (next.shopId) rememberShop(next.shopId, next.shopName || next.shopId);
       } catch { /* ignore */ }
       return next;
     }),
-  clear: () => set({ staffId: "", staffName: "" }),
+  clear: () => {
+    try {
+      localStorage.removeItem("tilltrail-staff-id");
+      localStorage.removeItem("tilltrail-staff-name");
+      localStorage.removeItem("tilltrail-staff-email");
+    } catch { /* ignore */ }
+    set({ staffId: "", staffName: "", staffEmail: "" });
+  },
 }));

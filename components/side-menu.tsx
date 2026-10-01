@@ -12,9 +12,11 @@ import {
   IconAnalytics,
   IconStaff,
   IconLock,
+  IconLogOut,
 } from "./icons";
+import { ownerSignOut } from "@/lib/auth/owner";
 
-const LINKS = [
+const OWNER_LINKS = [
   { label: "Dashboard", href: "/dashboard", icon: IconDashboard },
   { label: "Sell POS", href: "/sell", icon: IconSell },
   { label: "Products", href: "/products", icon: IconProducts },
@@ -22,14 +24,25 @@ const LINKS = [
   { label: "Staff", href: "/staff", icon: IconStaff },
 ] as const;
 
-// Owner navigation: fixed full-height sticky sidebar on desktop, clean bottom tab bar on mobile.
+const ATTENDANT_LINKS = [
+  { label: "My Shift", href: "/attendant", icon: IconDashboard },
+  { label: "Sell POS", href: "/sell", icon: IconSell },
+  { label: "Products", href: "/products", icon: IconProducts },
+] as const;
+
+// Role-aware navigation: fixed full-height sticky sidebar on desktop, clean bottom tab bar on mobile.
 export default function SideMenu() {
   const path = usePathname();
   const router = useRouter();
   const { staffName, role, setSession } = useSession();
 
-  const active = (href: string) =>
-    href === "/dashboard" ? path === href : path.startsWith(href);
+  const isOwner = role === "owner";
+  const links = isOwner ? OWNER_LINKS : ATTENDANT_LINKS;
+
+  const active = (href: string) => {
+    if (href === "/dashboard" || href === "/attendant") return path === href;
+    return path.startsWith(href);
+  };
 
   return (
     <>
@@ -43,25 +56,27 @@ export default function SideMenu() {
               Stockfindr
             </span>
             <span className="block text-[10px] font-bold uppercase tracking-wider text-stone-400">
-              Counter POS
+              {isOwner ? "Owner Portal" : "Counter Till"}
             </span>
           </div>
         </div>
 
-        {/* Integrated Shop Switcher */}
-        <div className="border-b border-stone-100 bg-stone-50/70 p-3 dark:border-stone-800/80 dark:bg-stone-950/40">
-          <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-stone-500">
-            Active Shop
-          </p>
-          <ShopSwitcher />
-        </div>
+        {/* Integrated Shop Switcher (Owners Only) */}
+        {isOwner && (
+          <div className="border-b border-stone-100 bg-stone-50/70 p-3 dark:border-stone-800/80 dark:bg-stone-950/40">
+            <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-stone-500">
+              Active Shop
+            </p>
+            <ShopSwitcher />
+          </div>
+        )}
 
         {/* Navigation Links */}
         <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
           <p className="mb-2 px-3 text-[10px] font-bold uppercase tracking-wider text-stone-400">
-            Navigation
+            {isOwner ? "Management" : "Till Counter"}
           </p>
-          {LINKS.map((item) => {
+          {links.map((item) => {
             const Icon = item.icon;
             const isSelected = active(item.href);
             return (
@@ -81,7 +96,7 @@ export default function SideMenu() {
           })}
         </nav>
 
-        {/* Footer: User Identity & Lock */}
+        {/* Footer: User Identity & Lock / Sign Out */}
         <div className="border-t border-stone-100 p-3 dark:border-stone-800">
           <div className="flex items-center justify-between rounded-xl bg-stone-50 p-2.5 dark:bg-stone-950/50">
             <div className="min-w-0 pr-2">
@@ -92,24 +107,39 @@ export default function SideMenu() {
                 {role || "Staff"}
               </p>
             </div>
-            <button
-              onClick={() => {
-                setSession({ staffId: "", staffName: "", staffEmail: "" });
-                router.push("/pin");
-              }}
-              title="Lock Counter"
-              className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-stone-200 bg-white text-stone-600 transition hover:bg-stone-100 hover:text-stone-900 dark:border-stone-800 dark:bg-stone-900 dark:text-stone-300"
-            >
-              <IconLock className="size-4" />
-            </button>
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => {
+                  setSession({ staffId: "", staffName: "", staffEmail: "" });
+                  router.push("/login");
+                }}
+                title="Lock Counter (PIN)"
+                className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-stone-200 bg-white text-stone-600 transition hover:bg-stone-100 hover:text-stone-900 dark:border-stone-800 dark:bg-stone-900 dark:text-stone-300"
+              >
+                <IconLock className="size-4" />
+              </button>
+              {isOwner && (
+                <button
+                  onClick={async () => {
+                    setSession({ staffId: "", staffName: "", staffEmail: "" });
+                    await ownerSignOut().catch(() => null);
+                    router.push("/login");
+                  }}
+                  title="Sign Out"
+                  className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-stone-200 bg-white text-stone-600 transition hover:bg-red-50 hover:text-red-600 dark:border-stone-800 dark:bg-stone-900 dark:text-stone-300 dark:hover:bg-red-950/50 dark:hover:text-red-400"
+                >
+                  <IconLogOut className="size-4" />
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </aside>
 
       {/* Mobile Floating Bottom Bar */}
       <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-stone-200 bg-white/95 backdrop-blur-md md:hidden dark:border-stone-800 dark:bg-stone-950/95">
-        <div className="grid grid-cols-5 py-1">
-          {LINKS.map((item) => {
+        <div className={`grid py-1 ${isOwner ? "grid-cols-5" : "grid-cols-3"}`}>
+          {links.map((item) => {
             const Icon = item.icon;
             const isSelected = active(item.href);
             return (

@@ -62,9 +62,40 @@ interface SaleRow {
 export default function AnalyticsPage() {
   const router = useRouter();
   const { user, loading } = useOwner();
-  const { shopId } = useSession();
+  const { shopId, role, setSession } = useSession();
+
+  useEffect(() => {
+    if (loading) return;
+    if (user) {
+      if (role !== "owner") {
+        setSession({
+          role: "owner",
+          staffId: `owner-${user.uid}`,
+          staffName: user.displayName || user.email?.split("@")[0] || "Owner",
+          staffEmail: user.email || "",
+        });
+      }
+      return;
+    }
+    if (role === "attendant") {
+      router.replace("/attendant");
+      return;
+    }
+    if (!user && !shopId) {
+      router.replace("/login");
+    }
+  }, [loading, user, role, shopId, router, setSession]);
+
   const [range, setRange] = useState<7 | 30>(7);
+  const [days, setDays] = useState<string[]>([]);
   const [isOwner, setIsOwner] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    const now = Date.now();
+    const list: string[] = [];
+    for (let i = range - 1; i >= 0; i--) list.push(dayKey(now - i * DAY));
+    setDays(list);
+  }, [range]);
   const [sales, setSales] = useState<SaleRow[]>([]);
   const [costMap, setCostMap] = useState<Record<string, number>>({});
   const [nameMap, setNameMap] = useState<Record<string, string>>({});
@@ -173,9 +204,12 @@ export default function AnalyticsPage() {
       } catch {
         /* offline */
       } finally {
-        setLoadingData(false);
+        if (active) setLoadingData(false);
       }
     })();
+    return () => {
+      active = false;
+    };
   }, [isOwner, shopId, range]);
 
   const stats = useMemo(() => {
@@ -233,9 +267,6 @@ export default function AnalyticsPage() {
       byDow[d.getDay()] += s.total;
     }
 
-    const nowMs = Date.now();
-    const days: string[] = [];
-    for (let i = range - 1; i >= 0; i--) days.push(dayKey(nowMs - i * DAY));
     const activeDays = [...byDay.keys()].length || 1;
 
     return {
@@ -271,7 +302,7 @@ export default function AnalyticsPage() {
         }))
         .sort((a, b) => b.revenue - a.revenue),
     };
-  }, [sales, costMap, nameMap, staffMap, range]);
+  }, [sales, costMap, nameMap, staffMap, range, days]);
 
   if (loading) return <RouteLoading label="Loading…" />;
   if (!user) {
