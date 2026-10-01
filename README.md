@@ -70,7 +70,19 @@ Status: linked to `stockfindr` (`proj_ixyvognhczqulijstdgs`), prod env vars set,
 v20261001.1 deployed. Test runs:
 `https://cloud.trigger.dev/projects/v3/proj_ixyvognhczqulijstdgs/test?environment=prod`
 
-## Seed the first shop
+## Self-serve shops (no seeding)
+
+Owners sign in with Google (email-link fallback) at `/`, create shops at
+`/onboarding` (multi-shop switcher in the dashboard header), and invite
+attendants with single-use 8-char codes from `/staff`. Attendants join at
+`/join`, set their own PIN, and burn the code. Rules enforce it all:
+`firestore.rules` + redeploy:
+
+```bash
+npx firebase-tools deploy --only firestore:rules --project stocfindr
+```
+
+## Seed the first shop (local-dev fallback)
 
 Rules are deployed. Firebase console → Authentication → enable **Email link**.
 Then seed (PINs are bcrypt-hashed, safe to re-run to add staff/link Telegram):

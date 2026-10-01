@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { db } from "@/lib/firebase/client";
 import { collection, getDocs, query, orderBy, limit } from "firebase/firestore";
 import { useSession } from "@/store/pos";
+import ShopSwitcher from "@/components/shop-switcher";
 
 export default function DashboardPage() {
   const { shopId } = useSession();
@@ -28,6 +29,7 @@ export default function DashboardPage() {
   return (
     <main className="max-w-4xl mx-auto p-4">
       <h1 className="text-xl font-bold">Owner dashboard</h1>
+      <div className="mt-1"><ShopSwitcher /></div>
       <div className="grid grid-cols-3 gap-2 mt-3">
         <div className="border rounded p-3"><div className="text-xs">Today</div><div className="text-xl font-bold">₦{total.toFixed(2)}</div></div>
         <div className="border rounded p-3"><div className="text-xs">Sales</div><div className="text-xl font-bold">{todays.length}</div></div>
@@ -48,7 +50,7 @@ export default function DashboardPage() {
         ))}
       </div>
       <nav className="mt-4 flex gap-3 text-sm underline">
-        <a href="/sell">Sell</a><a href="/products">Products</a><a href="/counts">Counts</a><a href="/reorders">Reorders</a><a href="/pin">Switch staff</a>
+        <a href="/sell">Sell</a><a href="/products">Products</a><a href="/staff">Staff</a><a href="/counts">Counts</a><a href="/reorders">Reorders</a><a href="/pin">Switch staff</a>
       </nav>
     </main>
   );
