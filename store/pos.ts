@@ -83,7 +83,7 @@ export function knownShops(): KnownShop[] {
   }
 }
 
-function rememberShop(id: string, name: string) {
+export function rememberShop(id: string, name: string) {
   try {
     const list = knownShops().filter((s) => s.id !== id);
     list.unshift({ id, name: name || id });

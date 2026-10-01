@@ -5,8 +5,7 @@ import { db } from "@/lib/firebase/client";
 import { tilldb } from "@/lib/db/dexie";
 import { verifyPin, pinRateLimitCheck, pinRecordFailure, pinClearFailures } from "@/lib/auth/pin";
 import { useOwner } from "@/lib/auth/owner";
-import { useSession } from "@/store/pos";
-import { knownShops } from "@/store/pos";
+import { useSession, knownShops, rememberShop } from "@/store/pos";
 import { onAuthStateChanged } from "firebase/auth";
 import { auth } from "@/lib/firebase/client";
 import { useRouter } from "next/navigation";
@@ -14,15 +13,15 @@ import type { StaffMember } from "@/lib/types";
 import Token from "@/components/brand/token";
 import { Badge, Btn, Card, Field, Page, ErrorText, inputCls } from "@/components/ui";
 
-// Counter gate: SHOP + EMAIL + PIN, all three, every time. The PIN alone
-// never identifies anyone — the triple binds the person to the shop, and it
-// all verifies offline against the cached team.
+// Counter gate: SHOP (typed work name) + EMAIL + PIN, all three, every time.
+// The typed name resolves against shops this device knows — never a raw id,
+// never a blind dropdown. All verifies offline against the cached team.
 export default function PinPage() {
-  const { shopId, shopName, deviceId, setSession } = useSession();
+  const { shopId, deviceId, setSession } = useSession();
   const { user } = useOwner();
   const router = useRouter();
   const [shops, setShops] = useState<{ id: string; name: string }[]>([]);
-  const [pickedShop, setPickedShop] = useState(shopId);
+  const [shopQuery, setShopQuery] = useState("");
   const [email, setEmail] = useState("");
   const [pin, setPin] = useState("");
   const [msg, setMsg] = useState("");
@@ -30,29 +29,58 @@ export default function PinPage() {
   const [teamCount, setTeamCount] = useState(0);
 
   useEffect(() => onAuthStateChanged(auth, (u) => setNoIdentity(!u)), []);
+
+  // Build the known-shop list: device registry + my server index (heals
+  // entries that were saved as raw ids before names were cached).
   useEffect(() => {
-    const reg = knownShops();
-    if (!reg.find((s) => s.id === shopId) && shopId !== "demo-shop") {
-      reg.unshift({ id: shopId, name: shopName || shopId });
-    }
-    setShops(reg);
-    if (!reg.find((s) => s.id === pickedShop) && reg.length) setPickedShop(reg[0].id);
-    tilldb.staff.where("shopId").equals(pickedShop).filter((s) => s.active).count().then(setTeamCount).catch(() => {});
+    (async () => {
+      const merged = new Map<string, string>();
+      for (const s of knownShops()) merged.set(s.id, s.name);
+      if (user) {
+        try {
+          const snap = await getDocs(collection(db, `users/${user.uid}/shops`));
+          snap.docs.forEach((d) => {
+            const n = (d.data().name as string) || d.id;
+            merged.set(d.id, n);
+            rememberShop(d.id, n);
+          });
+        } catch { /* offline — registry stands */ }
+      }
+      const list = [...merged.entries()].map(([id, name]) => ({
+        id,
+        name: name === id ? `Shop ${id.slice(0, 6)}…` : name,
+      }));
+      setShops(list);
+      const current = list.find((s) => s.id === shopId);
+      // Pre-fill only with a real name — never a raw id or placeholder.
+      setShopQuery(current && !current.name.startsWith("Shop ") ? current.name : "");
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shopId]);
+  }, [user, shopId]);
+
+  // Teammate count follows whatever the typed name currently resolves to.
   useEffect(() => {
-    tilldb.staff.where("shopId").equals(pickedShop).filter((s) => s.active).count().then(setTeamCount).catch(() => {});
-  }, [pickedShop]);
+    const hit = resolveShop();
+    if (!hit) { setTeamCount(0); return; }
+    tilldb.staff.where("shopId").equals(hit.id).filter((s) => s.active).count().then(setTeamCount).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shopQuery, shops]);
+
+  function resolveShop(): { id: string; name: string } | null {
+    const q = shopQuery.trim().toLowerCase();
+    if (!q) return null;
+    return shops.find((s) => s.name.toLowerCase() === q || s.id.toLowerCase() === q) || null;
+  }
 
   // Fresh device rescue: signed in but nothing cached — pull my own profile.
-  async function restoreAccess(): Promise<boolean> {
+  async function restoreAccess(resolvedId: string): Promise<boolean> {
     if (!user) return false;
     try {
-      const mirror = await getDoc(doc(db, `users/${user.uid}/shops/${pickedShop}`));
+      const mirror = await getDoc(doc(db, `users/${user.uid}/shops/${resolvedId}`));
       if (!mirror.exists()) return false;
-      const mine = await getDoc(doc(db, `shops/${pickedShop}/staff/${user.uid}`));
+      const mine = await getDoc(doc(db, `shops/${resolvedId}/staff/${user.uid}`));
       if (!mine.exists()) return false;
-      const me = { id: mine.id, shopId: pickedShop, ...mine.data() } as StaffMember;
+      const me = { id: mine.id, shopId: resolvedId, ...mine.data() } as StaffMember;
       if (me.active !== false && (me.pinHash || "").length > 0) {
         await tilldb.staff.put(me);
         return true;
@@ -63,20 +91,28 @@ export default function PinPage() {
 
   async function login() {
     setMsg("");
-    if (!pickedShop || !email.includes("@") || pin.length < 4) {
-      setMsg("Shop + email + 4-digit PIN — all three.");
+    const hit = resolveShop();
+    if (!hit) {
+      setMsg(
+        shops.length
+          ? `Unknown shop. On this device: ${shops.map((s) => s.name).join(", ")}.`
+          : "No shops on this device yet — join with a code first."
+      );
+      return;
+    }
+    if (!email.includes("@") || pin.length < 4) {
+      setMsg("Email + 4-digit PIN as well.");
       return;
     }
     const gate = pinRateLimitCheck(deviceId);
     if (gate.blocked) { setMsg(`Locked — retry in ${gate.retryAfterSec}s`); return; }
     const emailLc = email.trim().toLowerCase();
-    let team = await tilldb.staff.where("shopId").equals(pickedShop).toArray();
+    let team = await tilldb.staff.where("shopId").equals(hit.id).toArray();
     if (!team.length) {
-      // Nothing cached here yet — one rescue attempt before giving up.
-      if (await restoreAccess()) {
-        team = await tilldb.staff.where("shopId").equals(pickedShop).toArray();
+      if (await restoreAccess(hit.id)) {
+        team = await tilldb.staff.where("shopId").equals(hit.id).toArray();
       } else {
-        setMsg("Nobody from this shop on this device yet — join with a code first.");
+        setMsg(`Nobody from ${hit.name} on this device yet — join with a code first.`);
         return;
       }
     }
@@ -92,10 +128,9 @@ export default function PinPage() {
       return;
     }
     pinClearFailures(deviceId);
-    const shop = shops.find((s) => s.id === pickedShop);
     setSession({
-      shopId: pickedShop,
-      shopName: shop?.name || shopName,
+      shopId: hit.id,
+      shopName: hit.name,
       staffId: ok.id,
       staffName: ok.name,
       staffEmail: ok.email || "",
@@ -122,12 +157,20 @@ export default function PinPage() {
           </div>
         )}
         <div className="mt-4 space-y-4">
-          <Field label="Shop">
-            <select value={pickedShop} onChange={(e) => setPickedShop(e.target.value)} className={inputCls}>
+          <Field label="Shop (your work name)" hint="Type the shop name as your owner gave it.">
+            <input
+              value={shopQuery}
+              onChange={(e) => setShopQuery(e.target.value)}
+              placeholder="e.g. Mama Tunde Store"
+              list="known-shops"
+              autoComplete="off"
+              className={inputCls}
+            />
+            <datalist id="known-shops">
               {shops.map((s) => (
-                <option key={s.id} value={s.id}>{s.name}</option>
+                <option key={s.id} value={s.name} />
               ))}
-            </select>
+            </datalist>
           </Field>
           <Field label="Email">
             <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" type="email" autoComplete="email" className={inputCls} />
