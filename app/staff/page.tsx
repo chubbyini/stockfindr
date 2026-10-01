@@ -2,15 +2,16 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  collection, doc, getDoc, getDocs, writeBatch,
+  collection, doc, getDoc, getDocs, setDoc, writeBatch,
   serverTimestamp, Timestamp, arrayUnion, arrayRemove,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useOwner } from "@/lib/auth/owner";
+import { hashPin } from "@/lib/auth/pin";
 import { makeInviteCode } from "@/lib/auth/invite";
 import { useSession } from "@/store/pos";
 import RouteLoading from "@/components/brand/route-loading";
-import { Badge, Btn, Card, Empty, Page, ErrorText } from "@/components/ui";
+import { Badge, Btn, Card, Empty, Page, ErrorText, inputCls } from "@/components/ui";
 
 interface Invite {
   code: string;
@@ -24,6 +25,7 @@ export default function StaffPage() {
   const router = useRouter();
   const [staff, setStaff] = useState<{ id: string; name: string; role: string; active: boolean }[]>([]);
   const [invites, setInvites] = useState<Invite[]>([]);
+  const [myPin, setMyPin] = useState("");
   const [msg, setMsg] = useState("");
 
   useEffect(() => {
@@ -95,8 +97,29 @@ export default function StaffPage() {
     }
   }
 
-  async function setActive(id: string, active: boolean) {
+  // Owners sell too: same counter PIN as everyone else, profile keyed by
+  // their own Firebase uid (rules allow owners to write any staff doc).
+  async function addMe() {
+    if (!user || myPin.length < 4) { setMsg("Choose a PIN of 4+ digits."); return; }
     try {
+      await setDoc(doc(db, `shops/${shopId}/staff/${user.uid}`), {
+        shopId,
+        name: user.email?.split("@")[0] || "Owner",
+        email: user.email || "",
+        role: "owner",
+        pinHash: await hashPin(myPin),
+        active: true,
+        updatedAt: Date.now(),
+      });
+      setMyPin("");
+      setMsg("Your counter PIN is set ✓ — use it on /pin like everyone else.");
+      refresh();
+    } catch {
+      setMsg("Couldn't save the PIN.");
+    }
+  }
+
+  async function setActive(id: string, active: boolean) {    try {
       const { updateDoc } = await import("firebase/firestore");
       await updateDoc(doc(db, `shops/${shopId}/staff/${id}`), { active });
       refresh();
@@ -114,6 +137,14 @@ export default function StaffPage() {
   return (
     <Page wide>
       <h1 className="text-xl font-bold tracking-tight">Staff & invites</h1>
+      <Card className="mt-3">
+        <h2 className="font-bold">Your counter PIN</h2>
+        <p className="mt-1 text-xs text-stone-500">Sell at the counter yourself — same unlock as attendants.</p>
+        <div className="mt-2 flex gap-2">
+          <input value={myPin} onChange={(e) => setMyPin(e.target.value)} placeholder="4-digit PIN" inputMode="numeric" type="password" maxLength={6} className={`${inputCls} text-center tracking-[0.4em]`} />
+          <Btn onClick={addMe} className="shrink-0">Save PIN</Btn>
+        </div>
+      </Card>
       <Card className="mt-3">
         <div className="flex items-center justify-between gap-2">
           <div>

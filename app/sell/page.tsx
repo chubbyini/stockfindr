@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useCart, useSession, round2 } from "@/store/pos";
+import { useOwner } from "@/lib/auth/owner";
 import { tilldb } from "@/lib/db/dexie";
 import { enableOffline } from "@/lib/firebase/client";
 import { pushOutbox } from "@/lib/sync/push";
@@ -10,11 +11,11 @@ import { db } from "@/lib/firebase/client";
 import type { Product } from "@/lib/types";
 import { BrowserMultiFormatReader } from "@zxing/browser";
 import { Badge, Btn, Empty, TopBar, inputCls } from "@/components/ui";
-import { ownerSignOut } from "@/lib/auth/owner";
 
 export default function SellPage() {
   const { lines, add, inc, dec, clear, restore, total } = useCart();
   const { shopId, staffId, staffName, deviceId, setSession } = useSession();
+  const { user: fbUser, loading: fbLoading } = useOwner();
   const router = useRouter();
   const [catalog, setCatalog] = useState<Product[]>([]);
   const [search, setSearch] = useState("");
@@ -35,13 +36,33 @@ export default function SellPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shopId]);
 
-  // Counter discipline: 5 idle minutes locks the till back to the PIN screen.
+  // No more "unknown" sellers: anyone opening /sell without a PIN session
+  // gets identified once — Firebase owner name, saved counter name, or a
+  // single prompt — then it sticks to this device.
+  useEffect(() => {
+    if (fbLoading) return;
+    const s = useSession.getState();
+    if (s.staffId) return;
+    const saved = localStorage.getItem("tilltrail-counter-name");
+    const fbName = fbUser?.displayName || fbUser?.email?.split("@")[0];
+    const name =
+      saved || fbName || window.prompt("Who's selling? (shown on every sale)") || "Counter";
+    localStorage.setItem("tilltrail-counter-name", name);
+    setSession({
+      staffId: fbUser ? `owner-${fbUser.uid}` : `local-${s.deviceId}`,
+      staffName: name,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fbLoading]);
   // The basket survives (separate store) — the next PIN returns to it.
+  // NOTE: lock clears only the local PIN session, NOT the Firebase user.
+  // Join established the device's Firebase identity (uid == staff id), and
+  // every sale/ledger write is stamped with the PIN session's staff id, so
+  // accountability is intact while offline-first sync keeps working.
   useEffect(() => {
     let t: ReturnType<typeof setTimeout>;
     const lock = () => {
       setSession({ staffId: "", staffName: "", staffEmail: "" });
-      ownerSignOut().catch(() => {});
       router.push("/pin");
     };
     const reset = () => {
@@ -183,9 +204,13 @@ export default function SellPage() {
   }
 
   const pinned = catalog.filter(p => p.is_pinned);
-  const filtered = search
-    ? catalog.filter(p => p.name.toLowerCase().includes(search.toLowerCase()) || p.barcode?.includes(search)).slice(0, 30)
-    : pinned.slice(0, 24);
+  const rest = catalog.filter(p => !p.is_pinned);
+  const q = search.trim().toLowerCase();
+  // No search: pinned tiles first, then the rest of the catalog — the grid
+  // is never mysteriously empty when products exist.
+  const filtered = q
+    ? catalog.filter(p => p.name.toLowerCase().includes(q) || (p.barcode || "").toLowerCase().includes(q)).slice(0, 30)
+    : [...pinned, ...rest].slice(0, 24);
 
   return (
     <>
@@ -200,9 +225,8 @@ export default function SellPage() {
             <Btn
               size="sm"
               variant="secondary"
-              onClick={async () => {
+              onClick={() => {
                 setSession({ staffId: "", staffName: "", staffEmail: "" });
-                await ownerSignOut().catch(() => {});
                 router.push("/pin");
               }}
             >
@@ -239,7 +263,7 @@ export default function SellPage() {
             ))}
           </div>
           {!filtered.length && (
-            <Empty>{search ? "Nothing matches — scan it to quick-add." : "No pinned tiles yet. Pin fast sellers in Products."}</Empty>
+            <Empty>{q ? "Nothing matches — scan it to quick-add." : "No products in this shop yet — add them in Products."}</Empty>
           )}
         </section>
         <section>

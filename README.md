@@ -93,8 +93,11 @@ per device), join with an invite code at `/join` (profile id == Firebase
 uid — this is how the server knows it's Emeka), then unlock the shared
 counter daily at `/pin` (tap name + PIN, fully offline). Reads, sales sync
 and stock writes all work because attendants are real members
-(role attendant). Lock/auto-lock signs the Firebase user out too, so the
-next person starts clean.
+(role attendant). Lock only clears the local PIN session — the device's
+Firebase identity (established at join) stays, so offline-first sync keeps
+working; every write is still stamped with the PIN session's staff id, and
+`/pin` only ever lists the current shop's team, so nobody can wander into
+another shop's accounts. Owners can add their own counter PIN from `/staff`.
 
 ## Seed the first shop (local-dev fallback)
 

@@ -17,6 +17,7 @@ export default function DashboardPage() {
   const { shopId } = useSession();
   const [sales, setSales] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
+  const [staffNames, setStaffNames] = useState<Record<string, string>>({});
 
   useEffect(() => {
     (async () => {
@@ -25,6 +26,10 @@ export default function DashboardPage() {
         setSales(s.docs.map(d => ({ id: d.id, ...d.data() })));
         const p = await getDocs(collection(db, `shops/${shopId}/products`));
         setProducts(p.docs.map(d => ({ id: d.id, ...d.data() })));
+        const st = await getDocs(collection(db, `shops/${shopId}/staff`));
+        const m: Record<string, string> = {};
+        st.docs.forEach(d => { m[d.id] = (d.data().name as string) || d.id; });
+        setStaffNames(m);
       } catch { /* offline */ }
     })();
   }, [shopId]);
@@ -33,6 +38,9 @@ export default function DashboardPage() {
   const todays = sales.filter(s => (s.occurred_at || 0) >= today && s.status !== "voided");
   const total = todays.reduce((a, s) => a + (s.total || 0), 0);
   const low = products.filter(p => (p.current_stock ?? 0) <= (p.reorder_level ?? 5));
+  // Owner-as-seller stamps owner-<uid>; resolve through the team list.
+  const nameOf = (id: string) =>
+    staffNames[id] || staffNames[String(id).replace(/^owner-/, "")] || String(id);
 
   return (
     <>
@@ -64,7 +72,7 @@ export default function DashboardPage() {
           {sales.slice(0, 12).map((s) => (
             <div key={s.id} className="flex items-center justify-between gap-2 px-4 py-2.5 text-sm">
               <span className="min-w-0 truncate text-stone-600">
-                {new Date(s.occurred_at).toLocaleString()} • {s.staff_id}{" "}
+                {new Date(s.occurred_at).toLocaleString()} • {nameOf(s.staff_id)}{" "}
                 {s.status === "voided" && <Badge tone="stone">voided</Badge>}
               </span>
               <b className="shrink-0">₦{(s.total || 0).toFixed(2)}</b>

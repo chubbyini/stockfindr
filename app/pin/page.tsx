@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { collection, getDocs } from "firebase/firestore";
+import { collection, doc, getDoc, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { tilldb } from "@/lib/db/dexie";
 import { verifyPin, pinRateLimitCheck, pinRecordFailure, pinClearFailures } from "@/lib/auth/pin";
@@ -24,17 +24,34 @@ export default function PinPage() {
 
   useEffect(() => {
     (async () => {
-      const local = await tilldb.staff.where("shopId").equals(shopId).toArray();
-      setTeam(local.filter((s) => s.active));
-      // Refresh from server when possible (needs an authenticated member).
-      if (user) {
-        try {
-          const snap = await getDocs(collection(db, `shops/${shopId}/staff`));
-          const remote = snap.docs.map((d) => ({ id: d.id, shopId, ...d.data() } as StaffMember));
+      const local = (await tilldb.staff.where("shopId").equals(shopId).toArray())
+        .filter((s) => s.active);
+      if (local.length) setTeam(local);
+      if (!user) return;
+      try {
+        // Whole team (needs membership — attendants get it at join).
+        const snap = await getDocs(collection(db, `shops/${shopId}/staff`));
+        const remote = snap.docs.map((d) => ({ id: d.id, shopId, ...d.data() } as StaffMember));
+        if (remote.length) {
           await tilldb.staff.bulkPut(remote);
           setTeam(remote.filter((s) => s.active));
-        } catch { /* offline or not a member — cache stands */ }
-      }
+          return;
+        }
+      } catch { /* fall through to self-restore */ }
+      if (local.length) return;
+      try {
+        // Fresh device: nothing cached and the team list unreadable — pull
+        // just my own UID-keyed profile, no invite code needed twice.
+        const mirror = await getDoc(doc(db, `users/${user.uid}/shops/${shopId}`));
+        if (!mirror.exists()) return;
+        const mine = await getDoc(doc(db, `shops/${shopId}/staff/${user.uid}`));
+        if (!mine.exists()) return;
+        const me = { id: mine.id, shopId, ...mine.data() } as StaffMember;
+        if (me.active !== false && (me.pinHash || "").length > 0) {
+          await tilldb.staff.put(me);
+          setTeam([me]);
+        }
+      } catch { /* offline — join with a code instead */ }
     })();
   }, [shopId, user]);
 
