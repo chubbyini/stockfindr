@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { collection, doc, writeBatch, serverTimestamp } from "firebase/firestore";
+import { collection, doc, setDoc, writeBatch, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useOwner, ownerSignOut } from "@/lib/auth/owner";
 import { hashPin } from "@/lib/auth/pin";
@@ -54,12 +54,17 @@ export default function OnboardingPage() {
         createdAt: serverTimestamp(),
       });
 
-      // Create owner staff/till account
+      await batch.commit();
+
+      // Owner staff/till account — SEPARATE round trip, not in the batch
+      // above. Its rule reads the shop doc, and batched sibling writes are
+      // invisible to rule get()s, so the shop must already be committed.
+      // (Bundling it in caused permission-denied on the whole batch.)
       const pinHash = await hashPin(pin.trim());
       const displayName = ownerName.trim() || user!.displayName || user!.email?.split("@")[0] || "Owner";
       const emailLc = (user!.email || "").toLowerCase();
 
-      batch.set(doc(db, `shops/${shopRef.id}/staff/${user!.uid}`), {
+      await setDoc(doc(db, `shops/${shopRef.id}/staff/${user!.uid}`), {
         shopId: shopRef.id,
         name: displayName,
         email: emailLc,
@@ -68,8 +73,6 @@ export default function OnboardingPage() {
         active: true,
         updatedAt: Date.now(),
       });
-
-      await batch.commit();
 
       // Save locally to Dexie
       await tilldb.staff.put({
