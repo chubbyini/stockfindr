@@ -70,6 +70,18 @@ Status: linked to `stockfindr` (`proj_ixyvognhczqulijstdgs`), prod env vars set,
 v20261001.1 deployed. Test runs:
 `https://cloud.trigger.dev/projects/v3/proj_ixyvognhczqulijstdgs/test?environment=prod`
 
+## Seed the first shop
+
+Rules are deployed. Firebase console → Authentication → enable **Email link**.
+Then seed (PINs are bcrypt-hashed, safe to re-run to add staff/link Telegram):
+
+```bash
+node scripts/seed-shop.mjs --shop "Mama Tunde Store" --owner-uid UID123 \
+  --staff "Emeka:1234:attendant,Ada:5678:attendant" --telegram 123456789
+```
+
+Set the shop id it prints as `tilltrail-shop` in the app (PIN screen).
+
 ## Push to GitHub
 
 Live at `github.com/chubbyini/stockfindr` (`main`).
