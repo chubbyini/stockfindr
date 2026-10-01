@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { db } from "@/lib/firebase/client";
-import { collection, getDocs, doc, setDoc } from "firebase/firestore";
+import { collection, getDocs, doc, setDoc, writeBatch, serverTimestamp } from "firebase/firestore";
 import { useSession } from "@/store/pos";
 import { tilldb } from "@/lib/db/dexie";
 import type { Product } from "@/lib/types";
@@ -11,7 +11,7 @@ import { Badge, Btn, Card, Empty, Field, Page, TopBar, inputCls } from "@/compon
 export default function ProductsPage() {
   const { shopId, role, staffId } = useSession();
   const [items, setItems] = useState<Product[]>([]);
-  const [form, setForm] = useState({ name: "", barcode: "", price: "", cost: "", reorder: "5", pinned: false });
+  const [form, setForm] = useState({ name: "", barcode: "", price: "", cost: "", reorder: "5", stock: "", pinned: false });
   const [msg, setMsg] = useState("");
 
   useEffect(() => { refresh(); // eslint-disable-next-line
@@ -31,17 +31,33 @@ export default function ProductsPage() {
   async function saveManual() {
     if (!form.name || !form.price) { setMsg("Name + price required"); return; }
     const id = "p-" + Math.random().toString(36).slice(2, 10);
+    const opening = Math.max(0, parseFloat(form.stock || "0") || 0);
     const prod: Product = {
       id, shopId, barcode: form.barcode || null, name: form.name,
       price: parseFloat(form.price), cost_price: form.cost ? parseFloat(form.cost) : null,
       reorder_level: parseInt(form.reorder || "5"), is_pinned: form.pinned,
-      current_stock: 0, status: role === "owner" ? "active" : "pending_review",
+      current_stock: opening, status: role === "owner" ? "active" : "pending_review",
       created_by: staffId, updatedAt: Date.now(),
     };
+    // Stock always comes from the ledger — opening quantity is a restock
+    // entry so the cached counter and the ledger sum agree from day one.
+    const batch = writeBatch(db);
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { id: _drop, ...body } = prod;
-    await setDoc(doc(db, `shops/${shopId}/products/${id}`), body);
-    setForm({ name: "", barcode: "", price: "", cost: "", reorder: "5", pinned: false });
+    batch.set(doc(db, `shops/${shopId}/products/${id}`), body);
+    if (opening > 0) {
+      batch.set(doc(collection(db, `shops/${shopId}/ledger`)), {
+        product_id: id,
+        change_amount: opening,
+        reason: "restock",
+        reference_id: id,
+        staff_id: staffId || "owner",
+        occurred_at: Date.now(),
+        received_at: serverTimestamp(),
+      });
+    }
+    await batch.commit();
+    setForm({ name: "", barcode: "", price: "", cost: "", reorder: "5", stock: "", pinned: false });
     setMsg("Saved ✓");
     refresh();
   }
@@ -52,6 +68,14 @@ export default function ProductsPage() {
     const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets[wb.SheetNames[0]]);
     let ok = 0, bad = 0;
     const seen = new Set(items.map(i => (i.barcode || "").toLowerCase()));
+    // 250 products per batch (product + optional ledger entry = ≤500 writes).
+    let batch = writeBatch(db);
+    let ops = 0;
+    async function flush() {
+      if (ops > 0) await batch.commit();
+      batch = writeBatch(db);
+      ops = 0;
+    }
     for (const r of rows.slice(0, 2000)) {
       const name = String(r.name ?? r.Name ?? "").trim();
       const price = Number(r.price ?? r.Price ?? NaN);
@@ -59,16 +83,32 @@ export default function ProductsPage() {
       if (!name || !isFinite(price)) { bad++; continue; }
       if (barcode && seen.has(barcode.toLowerCase())) { bad++; continue; }
       const id = "p-" + Math.random().toString(36).slice(2, 10);
+      const opening = Math.max(0, Number(r.opening_stock ?? 0) || 0);
       const prod = {
         barcode, name, price, cost_price: Number(r.cost_price ?? r.cost ?? null) || null,
         reorder_level: Number(r.reorder_level ?? 5) || 5, is_pinned: false,
-        current_stock: Number(r.opening_stock ?? 0) || 0, status: "active",
+        current_stock: opening, status: "active",
         updatedAt: Date.now(),
       };
-      await setDoc(doc(db, `shops/${shopId}/products/${id}`), prod);
+      batch.set(doc(db, `shops/${shopId}/products/${id}`), prod);
+      ops++;
+      if (opening > 0) {
+        batch.set(doc(collection(db, `shops/${shopId}/ledger`)), {
+          product_id: id,
+          change_amount: opening,
+          reason: "restock",
+          reference_id: id,
+          staff_id: staffId || "owner",
+          occurred_at: Date.now(),
+          received_at: serverTimestamp(),
+        });
+        ops++;
+      }
       if (barcode) seen.add(barcode.toLowerCase());
       ok++;
+      if (ops >= 500) await flush();
     }
+    await flush();
     setMsg(`Import: ${ok} added, ${bad} skipped`);
     refresh();
   }
@@ -101,7 +141,12 @@ export default function ProductsPage() {
                 <Field label="Cost">
                   <input placeholder="opt" inputMode="decimal" value={form.cost} onChange={e => setForm({ ...form, cost: e.target.value })} className={inputCls} />
                 </Field>
-                <Field label="Reorder at">
+              </div>
+              <div className="flex gap-2">
+                <Field label="Stock on hand" hint="How many are on the shelf now?">
+                  <input placeholder="0" inputMode="decimal" value={form.stock} onChange={e => setForm({ ...form, stock: e.target.value })} className={inputCls} />
+                </Field>
+                <Field label="Reorder at" hint="Warn me at this level.">
                   <input inputMode="numeric" value={form.reorder} onChange={e => setForm({ ...form, reorder: e.target.value })} className={inputCls} />
                 </Field>
               </div>
