@@ -115,8 +115,8 @@ export default function LandingPage() {
           {/* Authoritative Sub-manifesto */}
           <p className="mx-auto mt-7 max-w-2xl text-base leading-relaxed font-normal text-stone-600 sm:text-xl sm:leading-relaxed dark:text-stone-400">
             When ground-level connectivity fails, your retail business cannot stop.
-            Stockfindr guarantees continuous point-of-sale execution through local cryptographic ledgers,
-            instant multi-shop cloud sync, and strict principal-agent governance.
+            Stockfindr keeps the till running offline with an append-only stock ledger,
+            exactly-once cloud sync, and a clean split between owner oversight and counter speed.
           </p>
 
           {/* Action CTAs */}
@@ -142,10 +142,10 @@ export default function LandingPage() {
           <div className="mt-14 grid grid-cols-2 gap-4 border-t border-stone-200/70 pt-8 sm:grid-cols-4 sm:gap-8 dark:border-stone-800/80">
             <div>
               <p className="font-mono text-2xl font-black text-stone-900 dark:text-white">
-                0.00ms
+                Zero
               </p>
               <p className="mt-1 text-xs font-medium text-stone-500">
-                Checkout Lag Under Network Cut
+                Blocked Sales When Offline
               </p>
             </div>
             <div>
@@ -158,18 +158,18 @@ export default function LandingPage() {
             </div>
             <div>
               <p className="font-mono text-2xl font-black text-stone-900 dark:text-white">
-                Real-Time
+                Per-sale
               </p>
               <p className="mt-1 text-xs font-medium text-stone-500">
-                COGS &amp; Gross Margin Audit
+                Cost &amp; Margin Tracking
               </p>
             </div>
             <div>
               <p className="font-mono text-2xl font-black text-stone-900 dark:text-white">
-                Bi-Directional
+                Once
               </p>
               <p className="mt-1 text-xs font-medium text-stone-500">
-                Multi-Branch Conflict Resolution
+                Every Sale Synced Exactly Once
               </p>
             </div>
           </div>
@@ -391,19 +391,19 @@ export default function LandingPage() {
                 <ul className="mt-6 space-y-3.5 text-xs text-stone-600 dark:text-stone-300">
                   <li className="flex items-start gap-3">
                     <IconCheck className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
-                    <span>Multi-shop portfolio switching with consolidated performance metrics.</span>
+                    <span>Run several shops from one account and switch between them in seconds.</span>
                   </li>
                   <li className="flex items-start gap-3">
                     <IconCheck className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
-                    <span>Real-time gross margin and net revenue auditing across all branches.</span>
+                    <span>Revenue, profit and margin analytics per shop, plus nightly Telegram summaries.</span>
                   </li>
                   <li className="flex items-start gap-3">
                     <IconCheck className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
-                    <span>Automated stock reorder threshold warnings before shelves run empty.</span>
+                    <span>Low-stock warnings before shelves run empty, with supplier reorder drafts.</span>
                   </li>
                   <li className="flex items-start gap-3">
                     <IconCheck className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
-                    <span>Cryptographic staff invite codes and instant remote register locking.</span>
+                    <span>Single-use invite codes for staff and tills that auto-lock when idle.</span>
                   </li>
                 </ul>
               </div>
@@ -443,19 +443,19 @@ export default function LandingPage() {
                 <ul className="mt-6 space-y-3.5 text-xs text-stone-300">
                   <li className="flex items-start gap-3">
                     <IconCheck className="size-4 shrink-0 text-emerald-400" />
-                    <span>4-digit security PIN unlock running entirely against local storage.</span>
+                    <span>Shop + email + 4-digit PIN unlock that works with zero network.</span>
                   </li>
                   <li className="flex items-start gap-3">
                     <IconCheck className="size-4 shrink-0 text-emerald-400" />
-                    <span>Instant camera barcode scanning and rapid product catalog lookup.</span>
+                    <span>Camera barcode scanning plus tap tiles for unbarcoded goods.</span>
                   </li>
                   <li className="flex items-start gap-3">
                     <IconCheck className="size-4 shrink-0 text-emerald-400" />
-                    <span>Automatic cash vs instant bank transfer reconciliation per sale.</span>
+                    <span>10-second undo on every sale — mistakes are cheap to fix.</span>
                   </li>
                   <li className="flex items-start gap-3">
                     <IconCheck className="size-4 shrink-0 text-emerald-400" />
-                    <span>Mid-shift cash drop logging with zero end-of-day drawer discrepancy.</span>
+                    <span>Sales queue offline and sync exactly once when back online.</span>
                   </li>
                 </ul>
               </div>
