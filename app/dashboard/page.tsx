@@ -4,6 +4,14 @@ import { db } from "@/lib/firebase/client";
 import { collection, getDocs, query, orderBy, limit } from "firebase/firestore";
 import { useSession } from "@/store/pos";
 import ShopSwitcher from "@/components/shop-switcher";
+import { Badge, Card, Empty, Page, Stat, TopBar } from "@/components/ui";
+
+const NAV = [
+  ["Sell", "/sell"],
+  ["Products", "/products"],
+  ["Staff", "/staff"],
+  ["PIN", "/pin"],
+] as const;
 
 export default function DashboardPage() {
   const { shopId } = useSession();
@@ -27,31 +35,56 @@ export default function DashboardPage() {
   const low = products.filter(p => (p.current_stock ?? 0) <= (p.reorder_level ?? 5));
 
   return (
-    <main className="max-w-4xl mx-auto p-4">
-      <h1 className="text-xl font-bold">Owner dashboard</h1>
-      <div className="mt-1"><ShopSwitcher /></div>
-      <div className="grid grid-cols-3 gap-2 mt-3">
-        <div className="border rounded p-3"><div className="text-xs">Today</div><div className="text-xl font-bold">₦{total.toFixed(2)}</div></div>
-        <div className="border rounded p-3"><div className="text-xs">Sales</div><div className="text-xl font-bold">{todays.length}</div></div>
-        <div className="border rounded p-3"><div className="text-xs">Low stock</div><div className="text-xl font-bold">{low.length}</div></div>
-      </div>
-      <h2 className="font-bold mt-4">Low stock (reorder)</h2>
-      <div className="border rounded divide-y">
-        {low.map(p => <div key={p.id} className="p-2 text-sm">{p.name} — {p.current_stock} left (reorder at {p.reorder_level})</div>)}
-        {!low.length && <div className="p-2 text-sm text-gray-500">All good ✅</div>}
-      </div>
-      <h2 className="font-bold mt-4">Recent sales</h2>
-      <div className="border rounded divide-y">
-        {sales.slice(0, 20).map(s => (
-          <div key={s.id} className="p-2 text-sm flex justify-between">
-            <span>{new Date(s.occurred_at).toLocaleString()} • {s.staff_id} {s.status === "voided" && "(voided)"}</span>
-            <span>₦{(s.total || 0).toFixed(2)}</span>
-          </div>
-        ))}
-      </div>
-      <nav className="mt-4 flex gap-3 text-sm underline">
-        <a href="/sell">Sell</a><a href="/products">Products</a><a href="/staff">Staff</a><a href="/counts">Counts</a><a href="/reorders">Reorders</a><a href="/pin">Switch staff</a>
-      </nav>
-    </main>
+    <>
+      <TopBar title="Dashboard" sub="Today at a glance" right={<ShopSwitcher />} />
+      <Page wide>
+        <div className="grid grid-cols-3 gap-2">
+          <Stat label="Today" value={`₦${total.toFixed(2)}`} />
+          <Stat label="Sales" value={String(todays.length)} />
+          <Stat label="Low stock" value={String(low.length)} tone={low.length ? "red" : "stone"} />
+        </div>
+
+        <h2 className="mb-2 mt-5 text-sm font-bold uppercase tracking-wide text-stone-500">
+          Running low
+        </h2>
+        <Card className="divide-y divide-stone-100 p-0">
+          {low.slice(0, 10).map((p) => (
+            <div key={p.id} className="flex items-center justify-between gap-2 px-4 py-2.5 text-sm">
+              <span className="font-medium">{p.name}</span>
+              <Badge tone="amber">{p.current_stock} left</Badge>
+            </div>
+          ))}
+          {!low.length && <div className="px-4 py-3"><Empty>All stocked up ✅</Empty></div>}
+        </Card>
+
+        <h2 className="mb-2 mt-5 text-sm font-bold uppercase tracking-wide text-stone-500">
+          Recent sales
+        </h2>
+        <Card className="divide-y divide-stone-100 p-0">
+          {sales.slice(0, 12).map((s) => (
+            <div key={s.id} className="flex items-center justify-between gap-2 px-4 py-2.5 text-sm">
+              <span className="min-w-0 truncate text-stone-600">
+                {new Date(s.occurred_at).toLocaleString()} • {s.staff_id}{" "}
+                {s.status === "voided" && <Badge tone="stone">voided</Badge>}
+              </span>
+              <b className="shrink-0">₦{(s.total || 0).toFixed(2)}</b>
+            </div>
+          ))}
+          {!sales.length && <div className="px-4 py-3"><Empty>No sales synced yet.</Empty></div>}
+        </Card>
+
+        <nav className="mt-5 grid grid-cols-4 gap-2">
+          {NAV.map(([label, href]) => (
+            <a
+              key={href}
+              href={href}
+              className="rounded-xl border border-stone-200 bg-white py-3 text-center text-sm font-semibold text-brand-800 shadow-sm transition active:scale-[0.98]"
+            >
+              {label}
+            </a>
+          ))}
+        </nav>
+      </Page>
+    </>
   );
 }

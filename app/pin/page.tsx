@@ -4,6 +4,8 @@ import { tilldb } from "@/lib/db/dexie";
 import { verifyPin, pinRateLimitCheck, pinRecordFailure, pinClearFailures } from "@/lib/auth/pin";
 import { useSession } from "@/store/pos";
 import { useRouter } from "next/navigation";
+import { SojournerToken } from "@sojournerbuilds/mark/tokens";
+import { Badge, Btn, Card, Page, ErrorText } from "@/components/ui";
 
 export default function PinPage() {
   const [pin, setPin] = useState("");
@@ -19,20 +21,39 @@ export default function PinPage() {
     for (const s of staff) {
       if (s.active && await verifyPin(pin, s.pinHash)) { ok = s; break; }
     }
-    if (!ok) { pinRecordFailure(deviceId); setMsg("Wrong PIN"); return; }
+    if (!ok) { pinRecordFailure(deviceId); setMsg("Wrong PIN — try again."); return; }
     pinClearFailures(deviceId);
     setSession({ staffId: ok.id, staffName: ok.name, role: ok.role });
     router.push("/sell");
   }
 
   return (
-    <main className="max-w-sm mx-auto p-8">
-      <h1 className="text-2xl font-bold mb-4">Stockfindr — Enter PIN</h1>
-      <input value={pin} onChange={e => setPin(e.target.value)} inputMode="numeric" type="password" maxLength={6}
-        placeholder="4-digit PIN" className="border rounded w-full p-3 text-center text-2xl tracking-widest" />
-      <button onClick={login} className="mt-3 w-full bg-green-700 text-white py-3 rounded">Open till</button>
-      {msg && <p className="mt-2 text-red-600">{msg}</p>}
-      <p className="text-xs text-gray-500 mt-4">Works offline — PINs checked against cached hashes.</p>
-    </main>
+    <Page>
+      <Card className="mt-8 p-6 text-center">
+        <div className="flex justify-center">
+          <SojournerToken size={64} spinning={false} />
+        </div>
+        <h1 className="mt-2 text-2xl font-bold">Open the till</h1>
+        <p className="mt-1 text-sm text-stone-500">Enter your 4-digit PIN to start selling.</p>
+        <input
+          value={pin}
+          onChange={(e) => setPin(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter" && pin) login(); }}
+          inputMode="numeric"
+          type="password"
+          maxLength={6}
+          autoFocus
+          placeholder="••••"
+          className="mt-5 w-full rounded-2xl border border-stone-300 bg-white p-4 text-center text-4xl tracking-[0.5em] outline-none placeholder:text-stone-300 focus:border-brand-600 focus:ring-2 focus:ring-brand-200"
+        />
+        <Btn size="lg" className="mt-4 w-full" onClick={login} disabled={!pin}>
+          Open till
+        </Btn>
+        {msg && <ErrorText>{msg}</ErrorText>}
+        <div className="mt-4">
+          <Badge tone="green">Works offline</Badge>
+        </div>
+      </Card>
+    </Page>
   );
 }

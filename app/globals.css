@@ -1,1 +1,26 @@
 @import "tailwindcss";
+
+@theme {
+  --color-brand-50: #f0fdf4;
+  --color-brand-100: #dcfce7;
+  --color-brand-200: #bbf7d0;
+  --color-brand-600: #16a34a;
+  --color-brand-700: #15803d;
+  --color-brand-800: #166534;
+  --color-brand-900: #14532d;
+  --color-paper: #f7f5f0;
+  --color-ink: #1c1917;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+}
+
+body {
+  @apply bg-paper text-ink antialiased;
+}
+
+/* Big tappable text inputs never trigger auto-zoom on mobile */
+input,
+select,
+textarea {
+  font-size: 16px;
+}

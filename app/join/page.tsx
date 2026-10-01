@@ -7,6 +7,7 @@ import { hashPin } from "@/lib/auth/pin";
 import { normalizeCode } from "@/lib/auth/invite";
 import { useSession } from "@/store/pos";
 import { tilldb } from "@/lib/db/dexie";
+import { Badge, Btn, Card, Field, Page, ErrorText, inputCls } from "@/components/ui";
 
 export default function JoinPage() {
   const router = useRouter();
@@ -75,24 +76,36 @@ export default function JoinPage() {
   }
 
   return (
-    <main className="max-w-sm mx-auto p-8">
-      <h1 className="text-2xl font-bold">Join your shop</h1>
-      {shopId ? (
-        <>
-          <p className="mt-2">Joining <b>{shopName}</b> (code {code})</p>
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Your name" className="border rounded w-full p-3 mt-4" />
-          <input value={pin} onChange={(e) => setPin(e.target.value)} placeholder="Choose a 4-digit PIN" inputMode="numeric" type="password" maxLength={6} className="border rounded w-full p-3 mt-2 text-center text-xl tracking-widest" />
-          <button onClick={join} disabled={busy} className="mt-3 w-full bg-green-700 text-white py-3 rounded disabled:opacity-40">
-            {busy ? "Joining…" : "Join and open the till"}
-          </button>
-        </>
-      ) : (
-        <>
-          <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="Invite code, e.g. K7Q2M4XD" className="border rounded w-full p-3 mt-4 text-center tracking-widest uppercase" />
-          <button onClick={lookup} className="mt-3 w-full bg-green-700 text-white py-3 rounded">Find my shop</button>
-        </>
-      )}
-      {msg && <p className="text-sm mt-2 text-red-600">{msg}</p>}
-    </main>
+    <Page>
+      <Card className="mt-4 p-6">
+        <h1 className="text-2xl font-bold tracking-tight">Join your shop</h1>
+        {shopId ? (
+          <div className="mt-4 space-y-4">
+            <div className="rounded-xl bg-brand-50 p-3 text-sm text-brand-800">
+              Joining <b>{shopName}</b>
+              <br />
+              <span className="font-mono tracking-widest">Code {code}</span>
+            </div>
+            <Field label="Your name">
+              <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Emeka" className={inputCls} />
+            </Field>
+            <Field label="Choose a 4-digit PIN" hint="You'll tap this in every day to open the till.">
+              <input value={pin} onChange={(e) => setPin(e.target.value)} placeholder="••••" inputMode="numeric" type="password" maxLength={6} className={`${inputCls} text-center text-2xl tracking-[0.5em]`} />
+            </Field>
+            <Btn size="lg" className="w-full" onClick={join} disabled={busy}>
+              {busy ? "Joining…" : "Join and open the till"}
+            </Btn>
+          </div>
+        ) : (
+          <div className="mt-4 space-y-4">
+            <Field label="Invite code" hint="8 letters from your owner — works once.">
+              <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="K7Q2M4XD" className={`${inputCls} text-center font-mono text-xl tracking-[0.3em] uppercase`} />
+            </Field>
+            <Btn size="lg" className="w-full" onClick={lookup}>Find my shop</Btn>
+          </div>
+        )}
+        {msg && <ErrorText>{msg}</ErrorText>}
+      </Card>
+    </Page>
   );
 }

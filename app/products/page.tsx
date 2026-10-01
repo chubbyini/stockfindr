@@ -1,11 +1,12 @@
 "use client";
 import { useEffect, useState } from "react";
 import { db } from "@/lib/firebase/client";
-import { collection, getDocs, doc, setDoc, deleteDoc } from "firebase/firestore";
+import { collection, getDocs, doc, setDoc } from "firebase/firestore";
 import { useSession } from "@/store/pos";
 import { tilldb } from "@/lib/db/dexie";
 import type { Product } from "@/lib/types";
 import * as XLSX from "xlsx";
+import { Badge, Btn, Card, Empty, Field, Page, TopBar, inputCls } from "@/components/ui";
 
 export default function ProductsPage() {
   const { shopId, role, staffId } = useSession();
@@ -39,7 +40,7 @@ export default function ProductsPage() {
     };
     await setDoc(doc(db, `shops/${shopId}/products/${id}`), { ...prod, id: undefined });
     setForm({ name: "", barcode: "", price: "", cost: "", reorder: "5", pinned: false });
-    setMsg("Saved");
+    setMsg("Saved ✓");
     refresh();
   }
 
@@ -75,39 +76,77 @@ export default function ProductsPage() {
     refresh();
   }
 
+  const pending = items.filter(i => i.status === "pending_review");
+
   return (
-    <main className="max-w-4xl mx-auto p-4">
-      <h1 className="text-xl font-bold mb-2">Products — scan / import / manual</h1>
-      <div className="grid md:grid-cols-2 gap-4">
-        <div className="border rounded p-3">
-          <h2 className="font-bold">Add one-by-one</h2>
-          <input placeholder="Name" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} className="border rounded w-full p-2 mt-2" />
-          <input placeholder="Barcode (optional — or scan)" value={form.barcode} onChange={e => setForm({ ...form, barcode: e.target.value })} className="border rounded w-full p-2 mt-2" />
-          <div className="flex gap-2 mt-2">
-            <input placeholder="Price" inputMode="decimal" value={form.price} onChange={e => setForm({ ...form, price: e.target.value })} className="border rounded w-full p-2" />
-            <input placeholder="Cost (opt)" inputMode="decimal" value={form.cost} onChange={e => setForm({ ...form, cost: e.target.value })} className="border rounded w-full p-2" />
-            <input placeholder="Reorder" inputMode="numeric" value={form.reorder} onChange={e => setForm({ ...form, reorder: e.target.value })} className="border rounded w-full p-2" />
-          </div>
-          <label className="text-sm mt-2 flex gap-2"><input type="checkbox" checked={form.pinned} onChange={e => setForm({ ...form, pinned: e.target.checked })} /> Pinned tile (unbarcoded fast seller)</label>
-          <button onClick={saveManual} className="mt-2 bg-green-700 text-white px-4 py-2 rounded">Save product</button>
+    <>
+      <TopBar title="Products" sub={`${items.length} in catalog`} />
+      <Page wide>
+        <div className="grid gap-3 md:grid-cols-2">
+          <Card>
+            <h2 className="font-bold">Add one-by-one</h2>
+            <div className="mt-3 space-y-3">
+              <Field label="Name">
+                <input placeholder="e.g. Gala sausage roll" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} className={inputCls} />
+              </Field>
+              <Field label="Barcode" hint="Optional — leave blank for unbarcoded goods.">
+                <input placeholder="Scan or type" value={form.barcode} onChange={e => setForm({ ...form, barcode: e.target.value })} className={inputCls} />
+              </Field>
+              <div className="flex gap-2">
+                <Field label="Price">
+                  <input placeholder="0.00" inputMode="decimal" value={form.price} onChange={e => setForm({ ...form, price: e.target.value })} className={inputCls} />
+                </Field>
+                <Field label="Cost">
+                  <input placeholder="opt" inputMode="decimal" value={form.cost} onChange={e => setForm({ ...form, cost: e.target.value })} className={inputCls} />
+                </Field>
+                <Field label="Reorder at">
+                  <input inputMode="numeric" value={form.reorder} onChange={e => setForm({ ...form, reorder: e.target.value })} className={inputCls} />
+                </Field>
+              </div>
+              <label className="flex min-h-11 items-center gap-2 text-sm">
+                <input type="checkbox" checked={form.pinned} onChange={e => setForm({ ...form, pinned: e.target.checked })} className="size-5 accent-brand-700" />
+                Pinned tile (fast seller, no barcode)
+              </label>
+              <Btn className="w-full" onClick={saveManual}>Save product</Btn>
+            </div>
+          </Card>
+          <Card>
+            <h2 className="font-bold">Import spreadsheet</h2>
+            <p className="mt-1 text-xs text-stone-500">Columns: name, barcode, price, cost, reorder_level, opening_stock</p>
+            <label className="mt-3 block cursor-pointer rounded-xl border border-dashed border-stone-300 bg-stone-50 p-4 text-center text-sm font-medium text-brand-800">
+              Tap to choose .xlsx / .csv
+              <input type="file" accept=".xlsx,.csv" onChange={e => e.target.files?.[0] && onFile(e.target.files[0])} className="hidden" />
+            </label>
+            {msg && <p className="mt-2 text-sm font-medium text-stone-700">{msg}</p>}
+          </Card>
         </div>
-        <div className="border rounded p-3">
-          <h2 className="font-bold">Import spreadsheet</h2>
-          <p className="text-xs text-gray-600">Columns: name, barcode, price, cost, reorder_level, opening_stock</p>
-          <input type="file" accept=".xlsx,.csv" onChange={e => e.target.files?.[0] && onFile(e.target.files[0])} className="mt-2" />
-          {msg && <p className="text-sm mt-2">{msg}</p>}
-        </div>
-      </div>
-      <h2 className="font-bold mt-4">Catalog ({items.length}) — pending review: {items.filter(i => i.status === "pending_review").length}</h2>
-      <div className="divide-y border rounded mt-2">
-        {items.map(p => (
-          <div key={p.id} className="p-2 flex items-center gap-2">
-            <span className="flex-1">{p.name} <span className="text-xs text-gray-500">{p.barcode || "no barcode"} • ₦{p.price} • stock {p.current_stock} • reorder {p.reorder_level}</span></span>
-            {p.status === "pending_review" && <span className="text-xs bg-yellow-200 px-2 rounded">review</span>}
-            {p.status === "pending_review" && role === "owner" && <button onClick={() => approve(p.id)} className="text-xs border px-2 py-1 rounded">Approve</button>}
-          </div>
-        ))}
-      </div>
-    </main>
+
+        <h2 className="mb-2 mt-5 text-sm font-bold uppercase tracking-wide text-stone-500">
+          Catalog ({items.length}) {pending.length > 0 && <Badge tone="amber">{pending.length} to review</Badge>}
+        </h2>
+        <Card className="divide-y divide-stone-100 p-0">
+          {items.map(p => {
+            const isLow = (p.current_stock ?? 0) <= (p.reorder_level ?? 5);
+            return (
+              <div key={p.id} className="flex items-center gap-2 px-4 py-2.5">
+                <span className="min-w-0 flex-1">
+                  <b className="block truncate text-sm">{p.name}</b>
+                  <span className="text-xs text-stone-500">
+                    {p.barcode || "no barcode"} • ₦{p.price} • stock {p.current_stock}
+                  </span>
+                </span>
+                {isLow && <Badge tone="red">low</Badge>}
+                {p.is_pinned && <Badge tone="green">pinned</Badge>}
+                {p.status === "pending_review" && <Badge tone="amber">review</Badge>}
+                {p.status === "pending_review" && role === "owner" && (
+                  <Btn size="sm" variant="secondary" onClick={() => approve(p.id)}>Approve</Btn>
+                )}
+              </div>
+            );
+          })}
+          {!items.length && <div className="px-4 py-3"><Empty>No products yet — add one above.</Empty></div>}
+        </Card>
+      </Page>
+    </>
   );
 }

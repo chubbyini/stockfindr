@@ -10,6 +10,7 @@ import { useOwner } from "@/lib/auth/owner";
 import { makeInviteCode } from "@/lib/auth/invite";
 import { useSession } from "@/store/pos";
 import RouteLoading from "@/components/brand/route-loading";
+import { Badge, Btn, Card, Empty, Page, ErrorText } from "@/components/ui";
 
 interface Invite {
   code: string;
@@ -73,6 +74,15 @@ export default function StaffPage() {
     }
   }
 
+  async function copyCode(code: string) {
+    try {
+      await navigator.clipboard.writeText(code);
+      setMsg(`Copied ${code} — send it to your attendant.`);
+    } catch {
+      setMsg(code);
+    }
+  }
+
   async function revoke(code: string) {
     try {
       const batch = writeBatch(db);
@@ -102,35 +112,50 @@ export default function StaffPage() {
   }
 
   return (
-    <main className="max-w-2xl mx-auto p-4">
-      <h1 className="text-xl font-bold">Staff & invites</h1>
-      <div className="border rounded p-3 mt-3">
-        <div className="flex justify-between items-center">
-          <h2 className="font-bold">Invite codes (single-use, 7 days)</h2>
-          <button onClick={createInvite} className="bg-green-700 text-white px-3 py-1 rounded text-sm">New invite</button>
+    <Page wide>
+      <h1 className="text-xl font-bold tracking-tight">Staff & invites</h1>
+      <Card className="mt-3">
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <h2 className="font-bold">Invite codes</h2>
+            <p className="text-xs text-stone-500">Single-use • expires in 7 days • tell it or send it</p>
+          </div>
+          <Btn size="sm" onClick={createInvite}>New invite</Btn>
         </div>
-        {invites.map((i) => (
-          <div key={i.code} className="flex justify-between items-center py-1 border-b">
-            <span className="font-mono tracking-widest">{i.code}</span>
-            <button onClick={() => revoke(i.code)} className="text-xs underline">Revoke</button>
-          </div>
-        ))}
-        {!invites.length && <p className="text-sm text-gray-500 mt-1">No pending invites.</p>}
-      </div>
-      <div className="border rounded p-3 mt-3">
+        <div className="mt-3 space-y-2">
+          {invites.map((i) => (
+            <div key={i.code} className="flex items-center justify-between gap-2 rounded-xl bg-stone-50 px-3 py-2">
+              <span className="font-mono text-lg font-bold tracking-[0.25em]">{i.code}</span>
+              <span className="flex gap-2">
+                <Btn size="sm" variant="secondary" onClick={() => copyCode(i.code)}>Copy</Btn>
+                <Btn size="sm" variant="ghost" onClick={() => revoke(i.code)}>Revoke</Btn>
+              </span>
+            </div>
+          ))}
+          {!invites.length && <Empty>No pending invites. Create one for each attendant.</Empty>}
+        </div>
+      </Card>
+      <Card className="mt-3">
         <h2 className="font-bold">Team</h2>
-        {staff.map((s) => (
-          <div key={s.id} className="flex justify-between items-center py-1 border-b">
-            <span>{s.name} <span className="text-xs text-gray-500">{s.role}{s.active ? "" : " (off)"}</span></span>
-            <button onClick={() => setActive(s.id, !s.active)} className="text-xs underline">
-              {s.active ? "Deactivate" : "Activate"}
-            </button>
-          </div>
-        ))}
-        {!staff.length && <p className="text-sm text-gray-500 mt-1">Nobody yet — share an invite code.</p>}
-      </div>
-      {msg && <p className="text-sm mt-2 text-red-600">{msg}</p>}
-      <nav className="mt-4 text-sm underline"><a href="/dashboard">Dashboard</a></nav>
-    </main>
+        <div className="mt-2 divide-y divide-stone-100">
+          {staff.map((s) => (
+            <div key={s.id} className="flex items-center justify-between gap-2 py-2.5">
+              <span className="flex items-center gap-2">
+                <b>{s.name}</b>
+                <Badge tone={s.active ? "green" : "stone"}>{s.active ? s.role : "off"}</Badge>
+              </span>
+              <Btn size="sm" variant="ghost" onClick={() => setActive(s.id, !s.active)}>
+                {s.active ? "Deactivate" : "Activate"}
+              </Btn>
+            </div>
+          ))}
+          {!staff.length && <Empty>Nobody yet — share an invite code above.</Empty>}
+        </div>
+      </Card>
+      {msg && <ErrorText>{msg}</ErrorText>}
+      <nav className="mt-4 text-sm">
+        <a href="/dashboard" className="text-brand-800 underline underline-offset-4">← Dashboard</a>
+      </nav>
+    </Page>
   );
 }

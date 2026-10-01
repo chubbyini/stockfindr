@@ -3,9 +3,10 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { collection, doc, writeBatch, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
-import { useOwner } from "@/lib/auth/owner";
+import { useOwner, ownerSignOut } from "@/lib/auth/owner";
 import { useSession } from "@/store/pos";
 import RouteLoading from "@/components/brand/route-loading";
+import { Btn, Card, Field, Page, ErrorText, inputCls } from "@/components/ui";
 
 const TIMEZONES = ["Africa/Lagos", "Africa/Accra", "Africa/Nairobi", "UTC"];
 
@@ -50,25 +51,40 @@ export default function OnboardingPage() {
   }
 
   return (
-    <main className="max-w-md mx-auto p-8">
-      <h1 className="text-2xl font-bold">Open your shop</h1>
-      <p className="text-sm text-gray-600 mt-1">Signed in as {user.email}</p>
-      <input
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        placeholder="Shop name, e.g. Mama Tunde Store"
-        className="border rounded w-full p-3 mt-4"
-      />
-      <div className="flex gap-2 mt-2">
-        <select value={timezone} onChange={(e) => setTimezone(e.target.value)} className="border rounded p-2 flex-1">
-          {TIMEZONES.map((t) => <option key={t} value={t}>{t}</option>)}
-        </select>
-        <input value={currency} onChange={(e) => setCurrency(e.target.value)} placeholder="NGN" maxLength={3} className="border rounded p-2 w-20" />
-      </div>
-      <button onClick={createShop} disabled={busy} className="mt-4 w-full bg-green-700 text-white py-3 rounded disabled:opacity-40">
-        {busy ? "Creating…" : "Create shop"}
-      </button>
-      {msg && <p className="text-sm mt-2 text-red-600">{msg}</p>}
-    </main>
+    <Page>
+      <Card className="mt-4 p-6">
+        <h1 className="text-2xl font-bold tracking-tight">Open your shop</h1>
+        <p className="mt-1 text-sm text-stone-500">
+          Signed in as {user.email}{" "}
+          <button onClick={() => { ownerSignOut(); router.push("/"); }} className="underline underline-offset-2">
+            (not you?)
+          </button>
+        </p>
+        <div className="mt-5 space-y-4">
+          <Field label="Shop name">
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. Mama Tunde Store"
+              className={inputCls}
+            />
+          </Field>
+          <div className="flex gap-3">
+            <Field label="Timezone">
+              <select value={timezone} onChange={(e) => setTimezone(e.target.value)} className={inputCls}>
+                {TIMEZONES.map((t) => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </Field>
+            <Field label="Currency">
+              <input value={currency} onChange={(e) => setCurrency(e.target.value.toUpperCase())} placeholder="NGN" maxLength={3} className={`${inputCls} w-24`} />
+            </Field>
+          </div>
+          <Btn size="lg" className="w-full" onClick={createShop} disabled={busy}>
+            {busy ? "Creating…" : "Create shop"}
+          </Btn>
+          {msg && <ErrorText>{msg}</ErrorText>}
+        </div>
+      </Card>
+    </Page>
   );
 }

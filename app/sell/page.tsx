@@ -8,6 +8,7 @@ import { collection, getDocs, query, where } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import type { Product } from "@/lib/types";
 import { BrowserMultiFormatReader } from "@zxing/browser";
+import { Badge, Btn, Empty, TopBar, inputCls } from "@/components/ui";
 
 export default function SellPage() {
   const { lines, add, inc, dec, clear, restore, total } = useCart();
@@ -156,62 +157,94 @@ export default function SellPage() {
     : pinned.slice(0, 24);
 
   return (
-    <main className="max-w-5xl mx-auto p-4 grid md:grid-cols-2 gap-4">
-      <section>
-        <div className="flex items-center justify-between mb-2">
-          <h1 className="text-xl font-bold">Sell — {staffName || "Attendant"}</h1>
-          <span className="text-xs bg-yellow-100 px-2 py-1 rounded">{pending} waiting to sync</span>
-        </div>
-        <div className="flex gap-2 mb-2">
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search or type barcode + Enter"
-            onKeyDown={e => { if (e.key === "Enter" && search) handleBarcode(search); }}
-            className="flex-1 border rounded p-2" />
-          <button onClick={startCameraScan} className="bg-green-600 text-white px-3 rounded">Scan</button>
-        </div>
-        {scanMsg && <p className="text-sm text-gray-600 mb-2">{scanMsg}</p>}
-        <div className="grid grid-cols-3 gap-2">
-          {filtered.map(p => (
-            <button key={p.id} onClick={() => { add({ productId: p.id, name: p.name, price: p.price }); beep(true); }}
-              className="border rounded p-3 text-left hover:bg-green-50">
-              <div className="font-medium text-sm">{p.name}</div>
-              <div className="text-xs">₦{p.price} • {p.current_stock}</div>
-            </button>
-          ))}
-        </div>
-      </section>
-      <section className="border rounded p-3 h-fit sticky top-2">
-        <h2 className="font-bold mb-2">Basket ({lines.length})</h2>
-        {lines.map(l => (
-          <div key={l.productId} className="flex items-center gap-2 py-1 border-b">
-            <span className="flex-1">{l.name} × {l.quantity}</span>
-            <button onClick={() => dec(l.productId)} className="px-2 border rounded">−</button>
-            <button onClick={() => inc(l.productId)} className="px-2 border rounded">+</button>
-            <span className="w-20 text-right">₦{(l.price * l.quantity).toFixed(2)}</span>
+    <>
+      <TopBar
+        title="Sell"
+        sub={staffName || "Attendant"}
+        right={
+          <Badge tone={pending ? "amber" : "green"}>
+            {pending ? `${pending} to sync` : "synced"}
+          </Badge>
+        }
+      />
+      <main className="mx-auto grid w-full max-w-5xl gap-3 px-4 py-4 md:grid-cols-[1fr_360px]">
+        <section>
+          <div className="flex gap-2">
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search or type barcode + Enter"
+              onKeyDown={e => { if (e.key === "Enter" && search) handleBarcode(search); }}
+              className="min-h-12 flex-1 rounded-xl border border-stone-300 bg-white px-4 text-base outline-none placeholder:text-stone-400 focus:border-brand-600 focus:ring-2 focus:ring-brand-200"
+            />
+            <Btn size="lg" onClick={startCameraScan} className="px-5">Scan</Btn>
           </div>
-        ))}
-        <div className="flex justify-between font-bold mt-2"><span>Total</span><span>₦{total().toFixed(2)}</span></div>
-        <button onClick={confirmSale} disabled={!lines.length} className="mt-3 w-full bg-green-700 text-white py-3 rounded text-lg disabled:opacity-40">Confirm</button>
-        {toast && (
-          <div className="mt-2 bg-black text-white p-2 rounded flex justify-between">
-            <span>Sale saved — undo?</span>
-            <button onClick={undo} className="underline">Undo (10s)</button>
+          <p className={`mt-1.5 min-h-5 text-sm ${scanMsg.startsWith("Added") ? "text-brand-700" : "text-stone-500"}`}>
+            {scanMsg || " "}
+          </p>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {filtered.map(p => (
+              <button
+                key={p.id}
+                onClick={() => { add({ productId: p.id, name: p.name, price: p.price }); beep(true); }}
+                className="min-h-20 rounded-2xl border border-stone-200 bg-white p-3 text-left shadow-sm transition active:scale-[0.97] active:bg-brand-50"
+              >
+                <div className="line-clamp-2 text-[15px] font-semibold leading-snug">{p.name}</div>
+                <div className="mt-1 text-sm text-stone-500">₦{p.price} • {p.current_stock}</div>
+              </button>
+            ))}
           </div>
-        )}
-      </section>
+          {!filtered.length && (
+            <Empty>{search ? "Nothing matches — scan it to quick-add." : "No pinned tiles yet. Pin fast sellers in Products."}</Empty>
+          )}
+        </section>
+        <section>
+          <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm md:sticky md:top-20">
+            <h2 className="font-bold">Basket ({lines.length})</h2>
+            <div className="mt-1 divide-y divide-stone-100">
+              {lines.map(l => (
+                <div key={l.productId} className="flex items-center gap-1.5 py-2">
+                  <span className="min-w-0 flex-1 truncate text-[15px]">{l.name} × {l.quantity}</span>
+                  <button onClick={() => dec(l.productId)} aria-label="decrease"
+                    className="flex size-10 items-center justify-center rounded-lg border border-stone-300 text-xl font-bold active:bg-stone-100">−</button>
+                  <button onClick={() => inc(l.productId)} aria-label="increase"
+                    className="flex size-10 items-center justify-center rounded-lg border border-stone-300 text-xl font-bold active:bg-stone-100">+</button>
+                  <span className="w-[72px] shrink-0 text-right text-sm font-semibold">₦{(l.price * l.quantity).toFixed(2)}</span>
+                </div>
+              ))}
+            </div>
+            {!lines.length && <p className="py-3 text-center text-sm text-stone-400">Tap a tile or scan to start.</p>}
+            <div className="mt-2 flex items-baseline justify-between border-t border-stone-200 pt-2">
+              <span className="font-bold">Total</span>
+              <span className="text-2xl font-bold">₦{total().toFixed(2)}</span>
+            </div>
+            <Btn size="lg" onClick={confirmSale} disabled={!lines.length} className="mt-3 w-full text-xl">
+              Confirm
+            </Btn>
+            {toast && (
+              <div className="mt-2 flex items-center justify-between rounded-xl bg-stone-900 p-3 text-sm text-white">
+                <span>Sale saved</span>
+                <button onClick={undo} className="font-bold underline underline-offset-4">Undo</button>
+              </div>
+            )}
+          </div>
+        </section>
+      </main>
       {quickAdd && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4">
-          <div className="bg-white rounded p-4 w-full max-w-sm">
-            <h3 className="font-bold">New barcode: {quickAdd.barcode}</h3>
-            <p className="text-xs text-gray-600">Seller quick-add (goes to owner review).</p>
-            <input value={qaName} onChange={e => setQaName(e.target.value)} placeholder="Product name" className="border rounded w-full p-2 mt-2" />
-            <input value={qaPrice} onChange={e => setQaPrice(e.target.value)} placeholder="Price" inputMode="decimal" className="border rounded w-full p-2 mt-2" />
-            <div className="flex gap-2 mt-3">
-              <button onClick={() => setQuickAdd(null)} className="flex-1 border rounded p-2">Cancel</button>
-              <button onClick={quickAddSave} className="flex-1 bg-green-600 text-white rounded p-2">Add & sell</button>
+        <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-sm rounded-3xl bg-white p-5">
+            <h3 className="font-bold">New item</h3>
+            <p className="mt-0.5 font-mono text-sm text-stone-500">{quickAdd.barcode}</p>
+            <p className="mt-1 text-xs text-stone-500">Quick-add — goes to owner review.</p>
+            <input value={qaName} onChange={e => setQaName(e.target.value)} placeholder="Product name" className={`${inputCls} mt-3`} />
+            <input value={qaPrice} onChange={e => setQaPrice(e.target.value)} placeholder="Price" inputMode="decimal" className={`${inputCls} mt-2`} />
+            <div className="mt-4 flex gap-2">
+              <Btn variant="secondary" onClick={() => setQuickAdd(null)} className="flex-1">Cancel</Btn>
+              <Btn onClick={quickAddSave} className="flex-1">Add & sell</Btn>
             </div>
           </div>
         </div>
       )}
-    </main>
+    </>
   );
 }
