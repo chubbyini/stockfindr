@@ -1,10 +1,11 @@
 import Dexie, { type Table } from "dexie";
-import type { OutboxSale, Product, StaffMember } from "@/lib/types";
+import type { OutboxSale, Product, StaffMember, TillShift } from "@/lib/types";
 
 class TillDB extends Dexie {
   outbox!: Table<OutboxSale, string>;
   products!: Table<Product, string>;
   staff!: Table<StaffMember, string>;
+  shifts!: Table<TillShift, string>;
 
   constructor() {
     super("tilltrail");
@@ -12,6 +13,12 @@ class TillDB extends Dexie {
       outbox: "saleId, shopId, status, syncAfter",
       products: "id, shopId, barcode, is_pinned, updatedAt",
       staff: "id, shopId",
+    });
+    this.version(2).stores({
+      outbox: "saleId, shopId, status, syncAfter",
+      products: "id, shopId, barcode, is_pinned, updatedAt",
+      staff: "id, shopId",
+      shifts: "id, shopId, staffId, status, openedAt",
     });
   }
 }

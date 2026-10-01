@@ -10,14 +10,16 @@ import { Badge, Card, Empty, Stat, TopBar } from "@/components/ui";
 import OwnerShell from "@/components/owner-shell";
 import { EnsureOwnerTillAccount } from "@/components/owner-pin-setup";
 import { useRouter } from "next/navigation";
-import type { Product } from "@/lib/types";
+import type { Product, TillShift } from "@/lib/types";
 import { useOwner } from "@/lib/auth/owner";
+import { listShifts } from "@/lib/shifts";
 import {
   IconSell,
   IconProducts,
   IconStaff,
   IconAlertTriangle,
   IconAnalytics,
+  IconCheck,
 } from "@/components/icons";
 
 interface DashboardSale {
@@ -58,6 +60,7 @@ export default function DashboardPage() {
   const [sales, setSales] = useState<DashboardSale[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [staffNames, setStaffNames] = useState<Record<string, string>>({});
+  const [shifts, setShifts] = useState<TillShift[]>([]);
 
   useEffect(() => {
     (async () => {
@@ -91,6 +94,9 @@ export default function DashboardPage() {
           m[d.id] = (d.data().name as string) || d.id;
         });
         setStaffNames(m);
+
+        const shiftList = await listShifts(shopId, 15);
+        setShifts(shiftList);
       } catch {
         /* offline */
       }
@@ -227,6 +233,76 @@ export default function DashboardPage() {
             {!low.length && (
               <div className="px-4 py-4">
                 <Empty>All inventory items are well stocked.</Empty>
+              </div>
+            )}
+          </Card>
+        </div>
+
+        {/* Till Shifts & Cash Reconciliation Audit */}
+        <div className="mt-6">
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="text-xs font-bold uppercase tracking-wider text-stone-500 dark:text-stone-400">
+              Till Shifts &amp; Cash Reconciliation (Z-Reports)
+            </h2>
+            <span className="text-xs text-stone-400">Cash drawer audit trail</span>
+          </div>
+
+          <Card className="divide-y divide-stone-100 p-0 overflow-hidden dark:divide-stone-800">
+            {shifts.slice(0, 8).map((sh) => (
+              <div
+                key={sh.id}
+                className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 py-3.5 text-xs sm:text-sm"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-stone-900 dark:text-white">
+                      {sh.staffName}
+                    </span>
+                    <Badge tone={sh.status === "open" ? "amber" : "green"}>
+                      {sh.status === "open" ? "Shift Active" : "Closed"}
+                    </Badge>
+                    {sh.status === "closed" && (
+                      <span
+                        className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                          (sh.variance || 0) === 0
+                            ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300"
+                            : (sh.variance || 0) < 0
+                            ? "bg-red-100 text-red-800 dark:bg-red-950/60 dark:text-red-300"
+                            : "bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300"
+                        }`}
+                      >
+                        {(sh.variance || 0) === 0
+                          ? "Balanced"
+                          : (sh.variance || 0) < 0
+                          ? `Shortage: -₦${Math.abs(sh.variance || 0).toFixed(2)}`
+                          : `Overage: +₦${(sh.variance || 0).toFixed(2)}`}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-stone-500 mt-1">
+                    Float: ₦{sh.openingFloat.toFixed(2)} &bull; Cash Sales: ₦{sh.cashSales.toFixed(2)} &bull; Drops: -₦{sh.cashDrops.toFixed(2)} &bull; Expected: ₦{sh.expectedCash.toFixed(2)}
+                  </p>
+                  {sh.notes && (
+                    <p className="text-xs text-stone-400 italic mt-0.5">Note: {sh.notes}</p>
+                  )}
+                </div>
+
+                <div className="text-right shrink-0">
+                  <span className="font-mono text-xs text-stone-500 block">
+                    {new Date(sh.openedAt).toLocaleDateString()} {new Date(sh.openedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                  </span>
+                  {sh.status === "closed" && (
+                    <span className="font-mono text-xs text-stone-400 block mt-0.5">
+                      Counted: ₦{(sh.countedCash || 0).toFixed(2)}
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+
+            {!shifts.length && (
+              <div className="px-4 py-4">
+                <Empty>No till shifts recorded yet.</Empty>
               </div>
             )}
           </Card>

@@ -60,6 +60,7 @@ interface SessionState {
   staffEmail: string;
   role: "owner" | "attendant";
   deviceId: string;
+  shiftId: string;
   setSession: (s: Partial<SessionState>) => void;
   clear: () => void;
 }
@@ -109,6 +110,7 @@ export const useSession = create<SessionState>((set) => ({
   staffEmail: typeof window !== "undefined" ? localStorage.getItem("tilltrail-staff-email") || "" : "",
   role: typeof window !== "undefined" ? (localStorage.getItem("tilltrail-role") as "owner" | "attendant") || "owner" : "owner",
   deviceId: typeof window !== "undefined" ? getDeviceId() : "server",
+  shiftId: typeof window !== "undefined" ? localStorage.getItem("tilltrail-shift-id") || "" : "",
   setSession: (s) =>
     set((prev) => {
       const next = { ...prev, ...s };
@@ -119,6 +121,7 @@ export const useSession = create<SessionState>((set) => ({
         if (next.staffName !== undefined) localStorage.setItem("tilltrail-staff-name", next.staffName);
         if (next.staffEmail !== undefined) localStorage.setItem("tilltrail-staff-email", next.staffEmail);
         if (next.role !== undefined) localStorage.setItem("tilltrail-role", next.role);
+        if (next.shiftId !== undefined) localStorage.setItem("tilltrail-shift-id", next.shiftId);
         if (next.shopId) rememberShop(next.shopId, next.shopName || next.shopId);
       } catch { /* ignore */ }
       return next;
@@ -128,7 +131,8 @@ export const useSession = create<SessionState>((set) => ({
       localStorage.removeItem("tilltrail-staff-id");
       localStorage.removeItem("tilltrail-staff-name");
       localStorage.removeItem("tilltrail-staff-email");
+      localStorage.removeItem("tilltrail-shift-id");
     } catch { /* ignore */ }
-    set({ staffId: "", staffName: "", staffEmail: "" });
+    set({ staffId: "", staffName: "", staffEmail: "", shiftId: "" });
   },
 }));

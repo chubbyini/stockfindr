@@ -80,3 +80,33 @@ export interface LedgerEntry {
   occurred_at: number;
   received_at: unknown;
 }
+
+export interface TillShift {
+  id: string;
+  shopId: string;
+  staffId: string;
+  staffName: string;
+  openedAt: number;
+  closedAt?: number;
+  openingFloat: number;
+  cashSales: number;
+  transferSales: number;
+  cashDrops: number;
+  expectedCash: number;
+  countedCash?: number;
+  variance?: number; // countedCash - expectedCash (0 = balanced, < 0 short, > 0 over)
+  notes?: string;
+  status: "open" | "closed";
+}
+
+export interface CashDropDoc {
+  id: string;
+  shopId: string;
+  staffId: string;
+  staffName: string;
+  shiftId?: string;
+  amount: number;
+  reason: string;
+  occurredAt: number;
+}
+
