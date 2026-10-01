@@ -86,6 +86,16 @@ Redeploy after EVERY rules change — the app silently depends on the live
 rules. Testing sign-in on a phone/LAN URL? Add the domain under Firebase
 console → Authentication → Settings → Authorized domains first.
 
+### Attendant identity (email link + PIN)
+
+Attendants sign in at `/login` with an email link (Firebase identity, once
+per device), join with an invite code at `/join` (profile id == Firebase
+uid — this is how the server knows it's Emeka), then unlock the shared
+counter daily at `/pin` (tap name + PIN, fully offline). Reads, sales sync
+and stock writes all work because attendants are real members
+(role attendant). Lock/auto-lock signs the Firebase user out too, so the
+next person starts clean.
+
 ## Seed the first shop (local-dev fallback)
 
 Rules are deployed. Firebase console → Authentication → enable **Email link**.

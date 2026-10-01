@@ -56,6 +56,7 @@ interface SessionState {
   shopId: string;
   staffId: string;
   staffName: string;
+  staffEmail: string;
   role: "owner" | "attendant";
   deviceId: string;
   setSession: (s: Partial<SessionState>) => void;
@@ -76,6 +77,7 @@ export const useSession = create<SessionState>((set) => ({
   shopId: typeof window !== "undefined" ? localStorage.getItem("tilltrail-shop") || "demo-shop" : "demo-shop",
   staffId: "",
   staffName: "",
+  staffEmail: "",
   role: "attendant",
   deviceId: typeof window !== "undefined" ? getDeviceId() : "server",
   setSession: (s) =>

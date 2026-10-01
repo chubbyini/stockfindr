@@ -13,6 +13,7 @@ export interface StaffMember {
   id: string;
   shopId: string;
   name: string;
+  email: string;
   role: Role;
   pinHash: string;
   active: boolean;

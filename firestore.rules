@@ -78,22 +78,32 @@ service cloud.firestore {
         && (!('currency' in request.resource.data) || request.resource.data.currency is string);
       allow update, delete: if isOwner(shopId);
 
-      // Co-owners / managers added later by the owner. The founder needs no
-      // member doc (ownerUid covers them).
+      // Co-owners added later by the owner. The founder needs no member doc
+      // (ownerUid covers them). Attendants self-join by burning a live
+      // invite — the code requirement stops strangers granting themselves in.
       match /members/{uid} {
         allow read: if isMember(shopId);
-        allow create, update, delete: if isOwner(shopId);
+        allow create: if authed() && uid == request.auth.uid
+          && request.resource.data.role == 'attendant'
+          && request.resource.data.inviteCode is string
+          && inviteLive(request.resource.data.inviteCode);
+        allow update, delete: if isOwner(shopId);
       }
 
       match /staff/{sid} {
         allow read: if isMember(shopId);
-        // Owner manages staff, or a code-holder joins (plaintext PINs rejected by hash length).
+        // Owner manages staff, or the authenticated code-holder creates
+        // their OWN profile (doc id == Firebase uid — this is how we know
+        // it's Emeka signing in). Plaintext PINs rejected by hash length.
         allow create: if isOwner(shopId) || (
-          request.resource.data.shopId == shopId
+          authed()
+          && sid == request.auth.uid
+          && request.resource.data.shopId == shopId
           && request.resource.data.role == 'attendant'
           && request.resource.data.active == true
           && request.resource.data.name is string
           && request.resource.data.name.size() >= 1
+          && request.resource.data.email is string
           && request.resource.data.pinHash is string
           && request.resource.data.pinHash.size() > 20
           && request.resource.data.inviteCode is string

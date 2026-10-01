@@ -10,6 +10,7 @@ import { db } from "@/lib/firebase/client";
 import type { Product } from "@/lib/types";
 import { BrowserMultiFormatReader } from "@zxing/browser";
 import { Badge, Btn, Empty, TopBar, inputCls } from "@/components/ui";
+import { ownerSignOut } from "@/lib/auth/owner";
 
 export default function SellPage() {
   const { lines, add, inc, dec, clear, restore, total } = useCart();
@@ -39,7 +40,8 @@ export default function SellPage() {
   useEffect(() => {
     let t: ReturnType<typeof setTimeout>;
     const lock = () => {
-      setSession({ staffId: "", staffName: "" });
+      setSession({ staffId: "", staffName: "", staffEmail: "" });
+      ownerSignOut().catch(() => {});
       router.push("/pin");
     };
     const reset = () => {
@@ -198,8 +200,9 @@ export default function SellPage() {
             <Btn
               size="sm"
               variant="secondary"
-              onClick={() => {
-                setSession({ staffId: "", staffName: "" });
+              onClick={async () => {
+                setSession({ staffId: "", staffName: "", staffEmail: "" });
+                await ownerSignOut().catch(() => {});
                 router.push("/pin");
               }}
             >

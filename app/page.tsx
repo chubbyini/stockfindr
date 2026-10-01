@@ -43,12 +43,15 @@ export default function Home() {
     (async () => {
       try {
         const shops = await listOwnerShops(user.uid);
-        if (!shops.length) router.push("/onboarding");
-        else {
+        if (shops.length) {
           const last = localStorage.getItem("tilltrail-shop");
           const pick = shops.find((s) => s.id === last) || shops[0];
           setSession({ shopId: pick.id });
           router.push("/dashboard");
+        } else if (localStorage.getItem("stockfindr-entry") === "attendant") {
+          router.push("/join");
+        } else {
+          router.push("/onboarding");
         }
       } catch {
         // Never spin forever: say it, offer retry.
@@ -90,7 +93,7 @@ export default function Home() {
         <p className="mt-2 text-[15px] leading-snug text-stone-600">
           Know what you sold, what&apos;s left, and what to reorder — with no extra work for staff.
         </p>
-        <Btn size="lg" className="mt-6 w-full" onClick={() => signInWithGoogle()}>
+        <Btn size="lg" className="mt-6 w-full" onClick={() => { localStorage.setItem("stockfindr-entry", "owner"); signInWithGoogle(); }}>
           Continue with Google
         </Btn>
         <div className="my-4 flex items-center gap-3 text-xs text-stone-400">
@@ -110,6 +113,7 @@ export default function Home() {
             variant="secondary"
             onClick={async () => {
               try {
+                localStorage.setItem("stockfindr-entry", "owner");
                 await sendEmailLink(email);
                 setMsg("Check your inbox for the sign-in link.");
               } catch {
@@ -126,16 +130,11 @@ export default function Home() {
         <p className="text-sm text-stone-700">
           <b>Shop attendant?</b>
           <br />
-          First time: join with your owner&apos;s code. Daily: open the till with your PIN.
+          Sign in with your email link, then unlock the counter with your PIN.
         </p>
-        <div className="mt-3 flex gap-2">
-          <Btn variant="secondary" size="sm" onClick={() => router.push("/join")} className="flex-1">
-            Join with code
-          </Btn>
-          <Btn variant="secondary" size="sm" onClick={() => router.push("/pin")} className="flex-1">
-            Open till (PIN)
-          </Btn>
-        </div>
+        <Btn variant="secondary" size="sm" onClick={() => router.push("/login")} className="mt-3 w-full">
+          Attendant sign-in
+        </Btn>
       </Card>
       <p className="mt-4 text-center text-xs text-stone-400">
         Works offline • Selling is the only chore
