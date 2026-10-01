@@ -1,6 +1,6 @@
 {
-  "name": "TillTrail",
-  "short_name": "TillTrail",
+  "name": "Stockfindr",
+  "short_name": "Stockfindr",
   "start_url": "/sell",
   "display": "standalone",
   "background_color": "#ffffff",

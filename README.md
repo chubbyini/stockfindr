@@ -1,4 +1,4 @@
-# TillTrail
+# Stockfindr
 
 Inventory, sales capture and reorder alerts for small retail shops.
 
@@ -55,7 +55,7 @@ No remote is configured yet. To publish:
 
 ```bash
 # web: create an empty repo, then
-git remote add origin https://github.com/<you>/tilltrail.git
+git remote add origin https://github.com/chubbyini/stockfindr.git
 git branch -M main
 git push -u origin main
 ```

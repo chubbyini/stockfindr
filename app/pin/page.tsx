@@ -27,7 +27,7 @@ export default function PinPage() {
 
   return (
     <main className="max-w-sm mx-auto p-8">
-      <h1 className="text-2xl font-bold mb-4">TillTrail — Enter PIN</h1>
+      <h1 className="text-2xl font-bold mb-4">Stockfindr — Enter PIN</h1>
       <input value={pin} onChange={e => setPin(e.target.value)} inputMode="numeric" type="password" maxLength={6}
         placeholder="4-digit PIN" className="border rounded w-full p-3 text-center text-2xl tracking-widest" />
       <button onClick={login} className="mt-3 w-full bg-green-700 text-white py-3 rounded">Open till</button>

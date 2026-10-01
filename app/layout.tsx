@@ -5,7 +5,7 @@ import { SojournerVeilProvider } from "@sojournerbuilds/mark/next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "TillTrail — know what you sold, what's left, what to reorder",
+  title: "Stockfindr — know what you sold, what's left, what to reorder",
   description:
     "Inventory, sales capture and reorder alerts for small retail shops. Selling is the only thing staff have to do.",
   icons: { icon: "/icon.svg", apple: "/icon.svg" },
@@ -16,7 +16,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en">
       <body>
-        <SojournerVeilProvider label="Loading TillTrail…">
+        <SojournerVeilProvider label="Loading Stockfindr…">
           {children}
         </SojournerVeilProvider>
       </body>
