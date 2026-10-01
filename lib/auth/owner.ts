@@ -46,7 +46,7 @@ const EMAIL_KEY = "stockfindr-email-link";
 export function sendEmailLink(email: string) {
   window.localStorage.setItem(EMAIL_KEY, email);
   return sendSignInLinkToEmail(auth, email, {
-    url: window.location.origin + "/",
+    url: window.location.origin + "/login",
     handleCodeInApp: true,
   });
 }

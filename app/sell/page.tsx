@@ -26,6 +26,7 @@ import {
   IconLock,
   IconSell,
 } from "@/components/icons";
+import { getOpenShift, startShift, recordSaleToShift } from "@/lib/shifts";
 
 function beep(ok = true) {
   try {
@@ -53,6 +54,7 @@ export default function SellPage() {
 
   const [catalog, setCatalog] = useState<Product[]>([]);
   const [search, setSearch] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState<"cash" | "transfer">("cash");
   const [pending, setPending] = useState(0);
   const [syncErr, setSyncErr] = useState("");
   const [diag, setDiag] = useState<SyncDiagnosis | null>(null);
@@ -260,18 +262,35 @@ export default function SellPage() {
     setSyncErr("");
     const saleId = crypto.randomUUID();
     const occurredAt = Date.now();
+    const saleTotal = round2(total());
     await tilldb.outbox.put({
       saleId,
       shopId,
       staffId: staffId || "unknown",
       deviceId,
       lines: [...lines],
-      total: round2(total()),
+      total: saleTotal,
       occurredAt,
       status: "held",
       syncAfter: occurredAt + 10000,
       attempts: 0,
     });
+
+    // Record sale against the active till shift for drawer balancing
+    let currentShiftId = useSession.getState().shiftId;
+    if (!currentShiftId && shopId && staffId) {
+      try {
+        const autoShift = await startShift(shopId, staffId, staffName, 0);
+        currentShiftId = autoShift.id;
+        setSession({ shiftId: autoShift.id });
+      } catch {
+        /* offline */
+      }
+    }
+    if (currentShiftId) {
+      recordSaleToShift(currentShiftId, saleTotal, paymentMethod).catch(() => {});
+    }
+
     setToast({ saleId, lines: [...lines] });
     clear();
     setMobileCartOpen(false);
@@ -531,6 +550,31 @@ export default function SellPage() {
                   ₦{total().toFixed(2)}
                 </span>
               </div>
+              {/* Tender Selector */}
+              <div className="flex rounded-xl border border-stone-200 bg-stone-100 p-1 dark:border-stone-800 dark:bg-stone-900">
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod("cash")}
+                  className={`flex flex-1 items-center justify-center py-2 text-xs font-bold rounded-lg transition ${
+                    paymentMethod === "cash"
+                      ? "bg-white text-stone-900 shadow-sm dark:bg-stone-800 dark:text-white"
+                      : "text-stone-500 hover:text-stone-900 dark:text-stone-400"
+                  }`}
+                >
+                  Cash Tender
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod("transfer")}
+                  className={`flex flex-1 items-center justify-center py-2 text-xs font-bold rounded-lg transition ${
+                    paymentMethod === "transfer"
+                      ? "bg-white text-stone-900 shadow-sm dark:bg-stone-800 dark:text-white"
+                      : "text-stone-500 hover:text-stone-900 dark:text-stone-400"
+                  }`}
+                >
+                  Bank Transfer
+                </button>
+              </div>
 
               <Btn
                 size="lg"
@@ -538,7 +582,7 @@ export default function SellPage() {
                 disabled={!lines.length}
                 className="w-full text-base font-bold"
               >
-                Complete Sale (₦{total().toFixed(2)})
+                Complete {paymentMethod === "cash" ? "Cash" : "Transfer"} Sale (₦{total().toFixed(2)})
               </Btn>
 
               {toast && (
@@ -643,13 +687,39 @@ export default function SellPage() {
                 </span>
               </div>
 
+              {/* Mobile Tender Selector */}
+              <div className="flex rounded-xl border border-stone-200 bg-stone-100 p-1 dark:border-stone-800 dark:bg-stone-900">
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod("cash")}
+                  className={`flex flex-1 items-center justify-center py-2 text-xs font-bold rounded-lg transition ${
+                    paymentMethod === "cash"
+                      ? "bg-white text-stone-900 shadow-sm dark:bg-stone-800 dark:text-white"
+                      : "text-stone-500 hover:text-stone-900 dark:text-stone-400"
+                  }`}
+                >
+                  Cash Tender
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod("transfer")}
+                  className={`flex flex-1 items-center justify-center py-2 text-xs font-bold rounded-lg transition ${
+                    paymentMethod === "transfer"
+                      ? "bg-white text-stone-900 shadow-sm dark:bg-stone-800 dark:text-white"
+                      : "text-stone-500 hover:text-stone-900 dark:text-stone-400"
+                  }`}
+                >
+                  Bank Transfer
+                </button>
+              </div>
+
               <Btn
                 size="lg"
                 onClick={confirmSale}
                 disabled={!lines.length}
                 className="w-full text-base font-bold"
               >
-                Confirm & Record Sale
+                Confirm {paymentMethod === "cash" ? "Cash" : "Transfer"} Sale (₦{total().toFixed(2)})
               </Btn>
             </div>
           </div>

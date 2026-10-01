@@ -105,7 +105,10 @@ export default function LoginPage() {
     })();
   }, [user, shopId]);
 
-  // When Firebase user is authenticated, resolve owner shops and route to /dashboard
+  // When Firebase user is authenticated, resolve where they belong:
+  // owned shops → /dashboard, attendant index → /attendant,
+  // nobody yet → /onboarding (owner entry) or /join (attendant entry).
+  const [retryKey, setRetryKey] = useState(0);
   useEffect(() => {
     if (ownerLoading || !user) return;
     let active = true;
@@ -128,14 +131,52 @@ export default function LoginPage() {
             staffEmail: user.email || "",
           });
           router.replace("/dashboard");
-        } else if (localStorage.getItem("stockfindr-entry") === "attendant") {
-          router.replace("/join");
-        } else {
-          router.replace("/onboarding");
+          return;
         }
+        // No owned shops — check the attendant directory. The same private
+        // index powers the shop list, so one extra read settles it.
+        const mirror = await getDocs(collection(db, `users/${user.uid}/shops`));
+        if (!active) return;
+        if (!mirror.empty) {
+          const d = mirror.docs[0];
+          const sid = d.id;
+          let staffName = "Attendant";
+          let staffEmail = user.email || "";
+          let staffRole: "owner" | "attendant" = "attendant";
+          try {
+            const sdoc = await getDoc(doc(db, `shops/${sid}/staff/${user.uid}`));
+            const s = sdoc.data() as { name?: string; email?: string; role?: string; pinHash?: string } | undefined;
+            if (s?.name) {
+              staffName = s.name;
+              staffEmail = s.email || staffEmail;
+              if (s.role === "owner" || s.role === "attendant") staffRole = s.role;
+              // Refresh the offline PIN cache while we're here (keep a good
+              // cached hash — never overwrite it with a blank).
+              const hash = s.pinHash || "";
+              if (hash.length > 0) {
+                await tilldb.staff.put({
+                  id: user.uid, shopId: sid, name: staffName, email: staffEmail,
+                  role: staffRole, pinHash: hash, active: true, updatedAt: Date.now(),
+                }).catch(() => {});
+              }
+            }
+          } catch { /* offline — session still routes; PIN cache may follow */ }
+          if (!active) return;
+          setSession({
+            shopId: sid,
+            shopName: (d.data().name as string) || sid,
+            role: staffRole,
+            staffId: user.uid,
+            staffName,
+            staffEmail,
+          });
+          router.replace("/attendant");
+          return;
+        }
+        router.replace(mode === "staff" ? "/join" : "/onboarding");
       } catch {
         if (active) {
-          setMsg("Could not fetch your shops. Please check your network and retry.");
+          setMsg("Could not fetch your shops. Check your connection — then retry. (If this keeps happening, the server rules may predate this app: redeploy firestore.rules.)");
         }
       }
     })();
@@ -143,7 +184,7 @@ export default function LoginPage() {
     return () => {
       active = false;
     };
-  }, [user, ownerLoading, router, setSession]);
+  }, [user, ownerLoading, router, setSession, mode, retryKey]);
 
   async function handleGoogleSignIn() {
     setMsg("");
@@ -443,7 +484,19 @@ export default function LoginPage() {
                 </div>
               )}
 
-              {msg && <ErrorText>{msg}</ErrorText>}
+              {msg && (
+                <>
+                  <ErrorText>{msg}</ErrorText>
+                  <Btn
+                    size="sm"
+                    variant="secondary"
+                    className="mt-2 w-full"
+                    onClick={() => { setMsg(""); setRetryKey((k) => k + 1); }}
+                  >
+                    Try again
+                  </Btn>
+                </>
+              )}
 
               <div className="mt-6 border-t border-stone-100 pt-5 text-center dark:border-stone-800">
                 <p className="text-xs text-stone-500">
