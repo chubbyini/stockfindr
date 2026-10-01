@@ -6,7 +6,8 @@ import { useOwner } from "@/lib/auth/owner";
 import { tilldb } from "@/lib/db/dexie";
 import { enableOffline } from "@/lib/firebase/client";
 import { pushOutbox } from "@/lib/sync/push";
-import { collection, getDocs, query, where } from "firebase/firestore";
+import { diagnoseSync, type SyncDiagnosis } from "@/lib/sync/diagnose";
+import { collection, doc, getDoc, getDocs, query, where } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import type { Product } from "@/lib/types";
 import { BrowserMultiFormatReader } from "@zxing/browser";
@@ -21,6 +22,11 @@ export default function SellPage() {
   const [search, setSearch] = useState("");
   const [pending, setPending] = useState(0);
   const [syncErr, setSyncErr] = useState("");
+  const [diag, setDiag] = useState<SyncDiagnosis | null>(null);
+
+  async function runDiag() {
+    setDiag(await diagnoseSync(shopId));
+  }
   const [toast, setToast] = useState<null | { saleId: string; lines: typeof lines }>(null);
   const [scanMsg, setScanMsg] = useState("");
   const [quickAdd, setQuickAdd] = useState<null | { barcode: string }>(null);
@@ -37,22 +43,29 @@ export default function SellPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shopId]);
 
-  // No more "unknown" sellers: anyone opening /sell without a PIN session
-  // gets identified once — Firebase owner name, saved counter name, or a
-  // single prompt — then it sticks to this device.
+  // Gate: a PIN session gets straight in. Otherwise only the shop's OWNER
+  // (Google-authed) may sell without a PIN — everyone else goes to /pin
+  // for shop + email + PIN. No more anonymous or "unknown" sellers.
   useEffect(() => {
     if (fbLoading) return;
     const s = useSession.getState();
     if (s.staffId) return;
-    const saved = localStorage.getItem("tilltrail-counter-name");
-    const fbName = fbUser?.displayName || fbUser?.email?.split("@")[0];
-    const name =
-      saved || fbName || window.prompt("Who's selling? (shown on every sale)") || "Counter";
-    localStorage.setItem("tilltrail-counter-name", name);
-    setSession({
-      staffId: fbUser ? `owner-${fbUser.uid}` : `local-${s.deviceId}`,
-      staffName: name,
-    });
+    (async () => {
+      if (fbUser) {
+        try {
+          const snap = await getDoc(doc(db, "shops", s.shopId));
+          if ((snap.data()?.ownerUid as string) === fbUser.uid) {
+            const saved = localStorage.getItem("tilltrail-counter-name");
+            const name =
+              saved || fbUser.displayName || fbUser.email?.split("@")[0] || "Owner";
+            localStorage.setItem("tilltrail-counter-name", name);
+            setSession({ staffId: `owner-${fbUser.uid}`, staffName: name });
+            return;
+          }
+        } catch { /* fall through to /pin */ }
+      }
+      router.push("/pin");
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fbLoading]);
   // The basket survives (separate store) — the next PIN returns to it.
@@ -270,7 +283,29 @@ export default function SellPage() {
           <p className={`mt-1.5 min-h-5 text-sm ${scanMsg.startsWith("Added") ? "text-brand-700" : "text-stone-500"}`}>
             {scanMsg || " "}
           </p>
-          {syncErr && <p className="mb-2 text-sm font-medium text-red-600">{syncErr}</p>}
+          {syncErr && (
+            <div className="mb-2">
+              <p className="text-sm font-medium text-red-600">{syncErr}</p>
+              {!diag ? (
+                <button onClick={runDiag} className="text-xs font-semibold text-brand-800 underline underline-offset-2">
+                  Why? Check this till
+                </button>
+              ) : (
+                <div className="mt-1 rounded-xl bg-red-50 p-2 text-xs text-stone-700">
+                  <p>
+                    {diag.signedIn ? `Signed in as ${diag.email || diag.uid}` : "Not signed in"}
+                    {diag.signedIn && (diag.isMember ? ` • ${diag.role} of this shop` : " • NO seat in this shop")}
+                  </p>
+                  {diag.fix && <p className="mt-1 font-medium">{diag.fix}</p>}
+                  {diag.blocked && (
+                    <Btn size="sm" variant="secondary" onClick={() => router.push("/login")} className="mt-2">
+                      Reconnect this till
+                    </Btn>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
             {filtered.map(p => (
               <button

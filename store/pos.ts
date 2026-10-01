@@ -64,6 +64,33 @@ interface SessionState {
   clear: () => void;
 }
 
+export interface KnownShop {
+  id: string;
+  name: string;
+}
+
+const REGISTRY_KEY = "tilltrail-shops";
+
+// Every shop this device has ever opened, for the PIN screen's shop picker.
+// Local only — the server source of truth stays in users/{uid}/shops.
+export function knownShops(): KnownShop[] {
+  try {
+    const raw = localStorage.getItem(REGISTRY_KEY);
+    const list = raw ? (JSON.parse(raw) as KnownShop[]) : [];
+    return list.filter((s) => s && s.id);
+  } catch {
+    return [];
+  }
+}
+
+function rememberShop(id: string, name: string) {
+  try {
+    const list = knownShops().filter((s) => s.id !== id);
+    list.unshift({ id, name: name || id });
+    localStorage.setItem(REGISTRY_KEY, JSON.stringify(list.slice(0, 10)));
+  } catch { /* ignore */ }
+}
+
 function getDeviceId(): string {
   if (typeof window === "undefined") return "server";
   let id = localStorage.getItem("tilltrail-device-id");
@@ -88,6 +115,7 @@ export const useSession = create<SessionState>((set) => ({
       try {
         localStorage.setItem("tilltrail-shop", next.shopId);
         localStorage.setItem("tilltrail-shop-name", next.shopName || "");
+        if (next.shopId) rememberShop(next.shopId, next.shopName || next.shopId);
       } catch { /* ignore */ }
       return next;
     }),

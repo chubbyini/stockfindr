@@ -21,6 +21,7 @@ export default function ProductsPage() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState<string | null>(null);
   const [creators, setCreators] = useState<Record<string, string>>({});
+  const [approvedMsg, setApprovedMsg] = useState<string | null>(null);
   const [restockId, setRestockId] = useState<string | null>(null);
   const [restockQty, setRestockQty] = useState("");
   const [editForm, setEditForm] = useState({ name: "", barcode: "", price: "", cost: "", reorder: "5", pinned: false });
@@ -176,6 +177,7 @@ export default function ProductsPage() {
 
   async function approve(id: string) {
     await setDoc(doc(db, `shops/${shopId}/products/${id}`), { status: "active" }, { merge: true });
+    setApprovedMsg(`“${items.find(i => i.id === id)?.name || "Product"}” approved — it's live in the catalog now.`);
     refresh();
   }
 
@@ -189,6 +191,7 @@ export default function ProductsPage() {
         batch.set(doc(db, `shops/${shopId}/products/${p.id}`), { status: "active" }, { merge: true });
       }
       await batch.commit();
+      setApprovedMsg(`${queued.length} item${queued.length === 1 ? "" : "s"} approved — all live in the catalog now.`);
       refresh();
     } finally {
       setActionBusy(null);
@@ -225,6 +228,7 @@ export default function ProductsPage() {
         updatedAt: Date.now(),
       }, { merge: true });
       setReviewEdit(null);
+      setApprovedMsg(`“${editForm.name.trim()}” fixed and approved — live in the catalog now.`);
       refresh();
     } finally {
       setActionBusy(null);
@@ -433,6 +437,16 @@ export default function ProductsPage() {
               <Btn variant="secondary" onClick={() => setConfirmDeleteId(null)} className="flex-1">Keep it</Btn>
               <Btn variant="danger" onClick={() => rejectProduct(confirmDeleteId)} disabled={!!actionBusy} className="flex-1">Delete</Btn>
             </div>
+          </div>
+        </div>
+      )}
+      {approvedMsg && (
+        <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-sm rounded-3xl bg-white p-6 text-center">
+            <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-brand-100 text-2xl font-bold text-brand-700">✓</div>
+            <h3 className="mt-3 font-bold">Approved</h3>
+            <p className="mt-1 text-sm text-stone-600">{approvedMsg}</p>
+            <Btn onClick={() => setApprovedMsg(null)} className="mt-4 w-full">Done</Btn>
           </div>
         </div>
       )}
