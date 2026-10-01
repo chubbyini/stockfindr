@@ -146,7 +146,9 @@ export default function SellPage() {
     add({ productId: id, name: prod.name, price: prod.price });
     try {
       const { doc, setDoc } = await import("firebase/firestore");
-      await setDoc(doc(db, `shops/${shopId}/products/${id}`), { ...prod, id: undefined });
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { id: _drop, ...body } = prod;
+      await setDoc(doc(db, `shops/${shopId}/products/${id}`), body);
     } catch { /* will sync later via import review */ }
     setQuickAdd(null); setQaName(""); setQaPrice("");
   }

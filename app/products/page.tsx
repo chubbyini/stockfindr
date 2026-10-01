@@ -38,7 +38,9 @@ export default function ProductsPage() {
       current_stock: 0, status: role === "owner" ? "active" : "pending_review",
       created_by: staffId, updatedAt: Date.now(),
     };
-    await setDoc(doc(db, `shops/${shopId}/products/${id}`), { ...prod, id: undefined });
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { id: _drop, ...body } = prod;
+    await setDoc(doc(db, `shops/${shopId}/products/${id}`), body);
     setForm({ name: "", barcode: "", price: "", cost: "", reorder: "5", pinned: false });
     setMsg("Saved ✓");
     refresh();
