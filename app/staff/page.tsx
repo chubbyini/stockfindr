@@ -23,7 +23,7 @@ export default function StaffPage() {
   const { user, loading } = useOwner();
   const { shopId } = useSession();
   const router = useRouter();
-  const [staff, setStaff] = useState<{ id: string; name: string; role: string; active: boolean }[]>([]);
+  const [staff, setStaff] = useState<{ id: string; name: string; email: string; role: string; active: boolean }[]>([]);
   const [invites, setInvites] = useState<Invite[]>([]);
   const [myPin, setMyPin] = useState("");
   const [msg, setMsg] = useState("");
@@ -36,7 +36,7 @@ export default function StaffPage() {
   async function refresh() {
     try {
       const s = await getDocs(collection(db, `shops/${shopId}/staff`));
-      setStaff(s.docs.map((d) => ({ id: d.id, ...(d.data() as { name: string; role: string; active: boolean }) })));
+      setStaff(s.docs.map((d) => ({ id: d.id, ...(d.data() as { name: string; email: string; role: string; active: boolean }) })));
       const shop = await getDoc(doc(db, `shops/${shopId}`));
       const codes = ((shop.data()?.inviteCodes as string[]) || []);
       const list: Invite[] = [];
@@ -167,13 +167,17 @@ export default function StaffPage() {
         </div>
       </Card>
       <Card className="mt-3">
-        <h2 className="font-bold">Team</h2>
+        <h2 className="font-bold">Team — bound to this shop</h2>
+        <p className="mt-0.5 text-xs text-stone-500">Login identity (email) + membership decide who can sell here — not just the PIN.</p>
         <div className="mt-2 divide-y divide-stone-100">
           {staff.map((s) => (
             <div key={s.id} className="flex items-center justify-between gap-2 py-2.5">
-              <span className="flex items-center gap-2">
-                <b>{s.name}</b>
-                <Badge tone={s.active ? "green" : "stone"}>{s.active ? s.role : "off"}</Badge>
+              <span className="min-w-0">
+                <span className="flex items-center gap-2">
+                  <b>{s.name}</b>
+                  <Badge tone={s.active ? "green" : "stone"}>{s.active ? s.role : "off"}</Badge>
+                </span>
+                {s.email ? <span className="block truncate text-xs text-stone-500">{s.email}</span> : null}
               </span>
               <Btn size="sm" variant="ghost" onClick={() => setActive(s.id, !s.active)}>
                 {s.active ? "Deactivate" : "Activate"}

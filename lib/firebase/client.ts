@@ -1,6 +1,10 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
-import { getFirestore, enableIndexedDbPersistence } from "firebase/firestore";
+import {
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
+} from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 
 const firebaseConfig = {
@@ -15,16 +19,13 @@ const firebaseConfig = {
 const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 
 export const auth = getAuth(app);
-export const db = getFirestore(app);
+// Persistent local cache (offline-first). This replaces the deprecated
+// enableIndexedDbPersistence() — no call needed, it's the Firestore default.
+export const db = initializeFirestore(app, {
+  localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+});
 export const storage = getStorage(app);
 
-let persistenceEnabled = false;
 export async function enableOffline() {
-  if (persistenceEnabled || typeof window === "undefined") return;
-  try {
-    await enableIndexedDbPersistence(db);
-    persistenceEnabled = true;
-  } catch {
-    // multi-tab or already enabled — Firestore still works online
-  }
+  // No-op kept for existing call sites — persistence is now built in.
 }

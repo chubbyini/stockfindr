@@ -54,6 +54,7 @@ export function round3(n: number) {
 
 interface SessionState {
   shopId: string;
+  shopName: string;
   staffId: string;
   staffName: string;
   staffEmail: string;
@@ -75,6 +76,7 @@ function getDeviceId(): string {
 
 export const useSession = create<SessionState>((set) => ({
   shopId: typeof window !== "undefined" ? localStorage.getItem("tilltrail-shop") || "demo-shop" : "demo-shop",
+  shopName: typeof window !== "undefined" ? localStorage.getItem("tilltrail-shop-name") || "" : "",
   staffId: "",
   staffName: "",
   staffEmail: "",
@@ -85,6 +87,7 @@ export const useSession = create<SessionState>((set) => ({
       const next = { ...prev, ...s };
       try {
         localStorage.setItem("tilltrail-shop", next.shopId);
+        localStorage.setItem("tilltrail-shop-name", next.shopName || "");
       } catch { /* ignore */ }
       return next;
     }),

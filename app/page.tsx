@@ -46,7 +46,7 @@ export default function Home() {
         if (shops.length) {
           const last = localStorage.getItem("tilltrail-shop");
           const pick = shops.find((s) => s.id === last) || shops[0];
-          setSession({ shopId: pick.id });
+          setSession({ shopId: pick.id, shopName: pick.name });
           router.push("/dashboard");
         } else if (localStorage.getItem("stockfindr-entry") === "attendant") {
           router.push("/join");

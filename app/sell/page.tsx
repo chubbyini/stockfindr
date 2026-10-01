@@ -14,12 +14,13 @@ import { Badge, Btn, Empty, TopBar, inputCls } from "@/components/ui";
 
 export default function SellPage() {
   const { lines, add, inc, dec, clear, restore, total } = useCart();
-  const { shopId, staffId, staffName, deviceId, setSession } = useSession();
+  const { shopId, shopName, staffId, staffName, deviceId, setSession } = useSession();
   const { user: fbUser, loading: fbLoading } = useOwner();
   const router = useRouter();
   const [catalog, setCatalog] = useState<Product[]>([]);
   const [search, setSearch] = useState("");
   const [pending, setPending] = useState(0);
+  const [syncErr, setSyncErr] = useState("");
   const [toast, setToast] = useState<null | { saleId: string; lines: typeof lines }>(null);
   const [scanMsg, setScanMsg] = useState("");
   const [quickAdd, setQuickAdd] = useState<null | { barcode: string }>(null);
@@ -112,6 +113,13 @@ export default function SellPage() {
     try {
       const r = await pushOutbox(shopId);
       if (r.pushed) loadLocal();
+      if (r.failed > 0) {
+        const f = await tilldb.outbox.where("shopId").equals(shopId).filter(s => s.status === "failed").first();
+        const raw = f?.lastError || "will retry automatically";
+        setSyncErr("Sync stuck: " + raw.replace(/^FirebaseError:\s*/, "").slice(0, 120));
+      } else {
+        setSyncErr("");
+      }
     } catch { /* badge only */ }
   }
 
@@ -157,6 +165,18 @@ export default function SellPage() {
 
   async function confirmSale() {
     if (!lines.length) return;
+    // No negative stock: block lines exceeding what's on the shelf.
+    const short = lines.filter(l => {
+      const p = catalog.find(c => c.id === l.productId);
+      return p != null && l.quantity > (p.current_stock ?? 0) + 1e-9;
+    });
+    if (short.length) {
+      const p = catalog.find(c => c.id === short[0].productId);
+      setSyncErr(`Not enough ${p?.name ?? "stock"} — only ${p?.current_stock ?? 0} left. Restock it first.`);
+      beep(false);
+      return;
+    }
+    setSyncErr("");
     const saleId = crypto.randomUUID();
     const occurredAt = Date.now();
     await tilldb.outbox.put({
@@ -216,7 +236,7 @@ export default function SellPage() {
     <>
       <TopBar
         title="Sell"
-        sub={staffName || "Attendant"}
+        sub={`${shopName || "Till"} • ${staffName || "Attendant"}`}
         right={
           <span className="flex items-center gap-2">
             <Badge tone={pending ? "amber" : "green"}>
@@ -248,8 +268,9 @@ export default function SellPage() {
             <Btn size="lg" onClick={startCameraScan} className="px-5">Scan</Btn>
           </div>
           <p className={`mt-1.5 min-h-5 text-sm ${scanMsg.startsWith("Added") ? "text-brand-700" : "text-stone-500"}`}>
-            {scanMsg || " "}
+            {scanMsg || " "}
           </p>
+          {syncErr && <p className="mb-2 text-sm font-medium text-red-600">{syncErr}</p>}
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
             {filtered.map(p => (
               <button

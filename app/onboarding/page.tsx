@@ -49,7 +49,7 @@ export default function OnboardingPage() {
         createdAt: serverTimestamp(),
       });
       await batch.commit();
-      setSession({ shopId: shopRef.id });
+      setSession({ shopId: shopRef.id, shopName: name.trim() });
       router.push("/dashboard");
     } catch (e) {
       setMsg(e instanceof Error ? e.message : "Couldn't create the shop.");

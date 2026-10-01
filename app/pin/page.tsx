@@ -6,6 +6,8 @@ import { tilldb } from "@/lib/db/dexie";
 import { verifyPin, pinRateLimitCheck, pinRecordFailure, pinClearFailures } from "@/lib/auth/pin";
 import { useOwner } from "@/lib/auth/owner";
 import { useSession } from "@/store/pos";
+import { onAuthStateChanged } from "firebase/auth";
+import { auth } from "@/lib/firebase/client";
 import { useRouter } from "next/navigation";
 import type { StaffMember } from "@/lib/types";
 import Token from "@/components/brand/token";
@@ -18,7 +20,9 @@ export default function PinPage() {
   const [picked, setPicked] = useState<StaffMember | null>(null);
   const [pin, setPin] = useState("");
   const [msg, setMsg] = useState("");
-  const { shopId, deviceId, setSession } = useSession();
+  const { shopId, shopName, deviceId, setSession } = useSession();
+  const [noIdentity, setNoIdentity] = useState(false);
+  useEffect(() => onAuthStateChanged(auth, (u) => setNoIdentity(!u)), []);
   const { user } = useOwner();
   const router = useRouter();
 
@@ -76,6 +80,16 @@ export default function PinPage() {
           <Token size={64} spinning={false} />
         </div>
         <h1 className="mt-2 text-2xl font-bold">Open the till</h1>
+        {shopName ? <p className="mt-0.5 text-sm font-semibold text-brand-800">{shopName}</p> : null}
+        {noIdentity && team.length > 0 && (
+          <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+            Till not connected — sales will queue but can&apos;t sync yet.
+            <br />
+            <Btn size="sm" variant="secondary" onClick={() => router.push("/login")} className="mt-2">
+              Reconnect this till
+            </Btn>
+          </div>
+        )}
         {!team.length ? (
           <div className="mt-4">
             <Empty>No team on this device yet.</Empty>

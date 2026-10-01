@@ -21,7 +21,8 @@ export default function ShopSwitcher() {
       <select
         value={shopId}
         onChange={(e) => {
-          setSession({ shopId: e.target.value });
+          const pick = shops.find((s) => s.id === e.target.value);
+          setSession({ shopId: e.target.value, shopName: pick?.name || "" });
           router.push("/dashboard");
         }}
         className="border rounded p-1 max-w-40"

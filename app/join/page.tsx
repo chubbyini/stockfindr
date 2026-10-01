@@ -106,7 +106,7 @@ export default function JoinPage() {
         id: user.uid, shopId, name: name.trim(), email: emailLc, role: "attendant",
         pinHash, active: true, updatedAt: Date.now(),
       });
-      setSession({ shopId, staffId: user.uid, staffName: name.trim(), staffEmail: emailLc, role: "attendant" });
+      setSession({ shopId, staffId: user.uid, staffName: name.trim(), staffEmail: emailLc, role: "attendant", shopName: shopName || "your shop" });
       router.push("/sell");
     } catch {
       setMsg("Couldn't join — the code may have just been used. Ask for a fresh one.");
@@ -124,7 +124,7 @@ export default function JoinPage() {
         id: user.uid, shopId: shop.id, name: d.name || "Attendant", email: d.email || "",
         role: "attendant", pinHash: d.pinHash || "", active: true, updatedAt: Date.now(),
       });
-      setSession({ shopId: shop.id, staffId: user.uid, staffName: d.name || "Attendant", staffEmail: d.email || "", role: "attendant" });
+      setSession({ shopId: shop.id, staffId: user.uid, staffName: d.name || "Attendant", staffEmail: d.email || "", role: "attendant", shopName: shop.name });
       router.push("/sell");
     } catch {
       setMsg("Couldn't open that shop — check your connection.");
