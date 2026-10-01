@@ -11,7 +11,8 @@ import { hashPin } from "@/lib/auth/pin";
 import { makeInviteCode } from "@/lib/auth/invite";
 import { useSession } from "@/store/pos";
 import RouteLoading from "@/components/brand/route-loading";
-import { Badge, Btn, Card, Empty, Page, ErrorText, inputCls } from "@/components/ui";
+import { Badge, Btn, Card, Empty, ErrorText, inputCls, TopBar } from "@/components/ui";
+import OwnerShell from "@/components/owner-shell";
 
 interface Invite {
   code: string;
@@ -135,7 +136,9 @@ export default function StaffPage() {
   }
 
   return (
-    <Page wide>
+    <>
+      <TopBar title="Staff & invites" sub="Team access for this shop" />
+      <OwnerShell>
       <h1 className="text-xl font-bold tracking-tight">Staff & invites</h1>
       <Card className="mt-3">
         <h2 className="font-bold">Your counter PIN</h2>
@@ -188,9 +191,7 @@ export default function StaffPage() {
         </div>
       </Card>
       {msg && <ErrorText>{msg}</ErrorText>}
-      <nav className="mt-4 text-sm">
-        <a href="/dashboard" className="text-brand-800 underline underline-offset-4">← Dashboard</a>
-      </nav>
-    </Page>
+      </OwnerShell>
+    </>
   );
 }

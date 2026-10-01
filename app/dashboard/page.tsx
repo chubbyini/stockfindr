@@ -4,14 +4,8 @@ import { db } from "@/lib/firebase/client";
 import { collection, getDocs, query, orderBy, limit } from "firebase/firestore";
 import { useSession } from "@/store/pos";
 import ShopSwitcher from "@/components/shop-switcher";
-import { Badge, Card, Empty, Page, Stat, TopBar } from "@/components/ui";
-
-const NAV = [
-  ["Sell", "/sell"],
-  ["Products", "/products"],
-  ["Staff", "/staff"],
-  ["PIN", "/pin"],
-] as const;
+import { Badge, Card, Empty, Stat, TopBar } from "@/components/ui";
+import OwnerShell from "@/components/owner-shell";
 
 export default function DashboardPage() {
   const { shopId } = useSession();
@@ -45,7 +39,7 @@ export default function DashboardPage() {
   return (
     <>
       <TopBar title="Dashboard" sub="Today at a glance" right={<ShopSwitcher />} />
-      <Page wide>
+      <OwnerShell>
         <div className="grid grid-cols-3 gap-2">
           <Stat label="Today" value={`₦${total.toFixed(2)}`} />
           <Stat label="Sales" value={String(todays.length)} />
@@ -80,19 +74,7 @@ export default function DashboardPage() {
           ))}
           {!sales.length && <div className="px-4 py-3"><Empty>No sales synced yet.</Empty></div>}
         </Card>
-
-        <nav className="mt-5 grid grid-cols-4 gap-2">
-          {NAV.map(([label, href]) => (
-            <a
-              key={href}
-              href={href}
-              className="rounded-xl border border-stone-200 bg-white py-3 text-center text-sm font-semibold text-brand-800 shadow-sm transition active:scale-[0.98]"
-            >
-              {label}
-            </a>
-          ))}
-        </nav>
-      </Page>
+      </OwnerShell>
     </>
   );
 }

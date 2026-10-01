@@ -1,13 +1,14 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { db } from "@/lib/firebase/client";
-import { collection, getDocs, doc, setDoc, writeBatch, serverTimestamp } from "firebase/firestore";
+import { collection, getDocs, doc, setDoc, deleteDoc, writeBatch, serverTimestamp, increment } from "firebase/firestore";
 import { useSession } from "@/store/pos";
 import { tilldb } from "@/lib/db/dexie";
 import type { Product } from "@/lib/types";
 import * as XLSX from "xlsx";
 import { BrowserMultiFormatReader } from "@zxing/browser";
-import { Badge, Btn, Card, Empty, Field, Page, TopBar, inputCls } from "@/components/ui";
+import { Badge, Btn, Card, Empty, Field, TopBar, inputCls } from "@/components/ui";
+import OwnerShell from "@/components/owner-shell";
 
 export default function ProductsPage() {
   const { shopId, role, staffId } = useSession();
@@ -16,6 +17,13 @@ export default function ProductsPage() {
   const [msg, setMsg] = useState("");
   const [scanOpen, setScanOpen] = useState(false);
   const [scanErr, setScanErr] = useState("");
+  const [reviewEdit, setReviewEdit] = useState<Product | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [actionBusy, setActionBusy] = useState<string | null>(null);
+  const [creators, setCreators] = useState<Record<string, string>>({});
+  const [restockId, setRestockId] = useState<string | null>(null);
+  const [restockQty, setRestockQty] = useState("");
+  const [editForm, setEditForm] = useState({ name: "", barcode: "", price: "", cost: "", reorder: "5", pinned: false });
   const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => { refresh(); // eslint-disable-next-line
@@ -48,6 +56,13 @@ export default function ProductsPage() {
       const list = snap.docs.map(d => ({ id: d.id, shopId, ...d.data() } as Product));
       setItems(list);
       await tilldb.products.bulkPut(list);
+      // Who added these? (best-effort — members can read the team list)
+      try {
+        const st = await getDocs(collection(db, `shops/${shopId}/staff`));
+        const m: Record<string, string> = {};
+        st.docs.forEach(d => { m[d.id] = (d.data().name as string) || d.id; });
+        setCreators(m);
+      } catch { /* offline — names stay blank */ }
     } catch {
       setItems(await tilldb.products.where("shopId").equals(shopId).toArray());
     }
@@ -164,12 +179,101 @@ export default function ProductsPage() {
     refresh();
   }
 
+  async function approveAll() {
+    const queued = items.filter(i => i.status === "pending_review");
+    if (!queued.length || actionBusy) return;
+    setActionBusy("all");
+    try {
+      const batch = writeBatch(db);
+      for (const p of queued) {
+        batch.set(doc(db, `shops/${shopId}/products/${p.id}`), { status: "active" }, { merge: true });
+      }
+      await batch.commit();
+      refresh();
+    } finally {
+      setActionBusy(null);
+    }
+  }
+
+  function openReviewEdit(p: Product) {
+    setReviewEdit(p);
+    setEditForm({
+      name: p.name,
+      barcode: p.barcode || "",
+      price: String(p.price),
+      cost: p.cost_price != null ? String(p.cost_price) : "",
+      reorder: String(p.reorder_level ?? 5),
+      pinned: !!p.is_pinned,
+    });
+  }
+
+  async function saveReviewEdit() {
+    if (!reviewEdit || !editForm.name.trim() || !isFinite(Number(editForm.price))) {
+      setMsg("Name + valid price required.");
+      return;
+    }
+    setActionBusy(reviewEdit.id);
+    try {
+      await setDoc(doc(db, `shops/${shopId}/products/${reviewEdit.id}`), {
+        name: editForm.name.trim(),
+        barcode: editForm.barcode.trim() || null,
+        price: Number(editForm.price),
+        cost_price: editForm.cost ? Number(editForm.cost) : null,
+        reorder_level: parseInt(editForm.reorder || "5") || 5,
+        is_pinned: editForm.pinned,
+        status: "active",
+        updatedAt: Date.now(),
+      }, { merge: true });
+      setReviewEdit(null);
+      refresh();
+    } finally {
+      setActionBusy(null);
+    }
+  }
+
+  async function rejectProduct(id: string) {
+    if (actionBusy) return;
+    setActionBusy(id);
+    try {
+      // Product row goes; ledger history stays (audit trail + past sales intact).
+      await deleteDoc(doc(db, `shops/${shopId}/products/${id}`));
+      await tilldb.products.delete(id).catch(() => {});
+      setConfirmDeleteId(null);
+      refresh();
+    } finally {
+      setActionBusy(null);
+    }
+  }
+
+  async function restock(id: string, qty: number) {
+    if (!(qty > 0) || actionBusy) return;
+    setActionBusy(id);
+    try {
+      const batch = writeBatch(db);
+      batch.set(doc(db, `shops/${shopId}/products/${id}`), { current_stock: increment(qty) }, { merge: true });
+      batch.set(doc(collection(db, `shops/${shopId}/ledger`)), {
+        product_id: id,
+        change_amount: qty,
+        reason: "restock",
+        reference_id: id,
+        staff_id: staffId || "owner",
+        occurred_at: Date.now(),
+        received_at: serverTimestamp(),
+      });
+      await batch.commit();
+      setRestockId(null);
+      refresh();
+    } finally {
+      setActionBusy(null);
+    }
+  }
+
   const pending = items.filter(i => i.status === "pending_review");
 
   return (
     <>
       <TopBar title="Products" sub={`${items.length} in catalog`} />
-      <Page wide>
+      <OwnerShell>
         <div className="grid gap-3 md:grid-cols-2">
           <Card>
             <h2 className="font-bold">Add one-by-one</h2>
@@ -224,29 +328,65 @@ export default function ProductsPage() {
         <h2 className="mb-2 mt-5 text-sm font-bold uppercase tracking-wide text-stone-500">
           Catalog ({items.length}) {pending.length > 0 && <Badge tone="amber">{pending.length} to review</Badge>}
         </h2>
+        {pending.length > 0 && role === "owner" && (
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
+            <p className="text-sm font-semibold text-amber-800">
+              {pending.length} item{pending.length === 1 ? "" : "s"} waiting for review
+              <span className="block text-xs font-normal">Added by attendants — approve, fix, or reject.</span>
+            </p>
+            <Btn size="sm" onClick={approveAll} disabled={!!actionBusy}>
+              {actionBusy === "all" ? "Approving…" : "Approve all"}
+            </Btn>
+          </div>
+        )}
         <Card className="divide-y divide-stone-100 p-0">
           {items.map(p => {
             const isLow = (p.current_stock ?? 0) <= (p.reorder_level ?? 5);
+            const isPending = p.status === "pending_review";
             return (
-              <div key={p.id} className="flex items-center gap-2 px-4 py-2.5">
-                <span className="min-w-0 flex-1">
-                  <b className="block truncate text-sm">{p.name}</b>
-                  <span className="text-xs text-stone-500">
-                    {p.barcode || "no barcode"} • ₦{p.price} • stock {p.current_stock}
+              <div key={p.id} className="px-4 py-2.5">
+                <div className="flex items-center gap-2">
+                  <span className="min-w-0 flex-1">
+                    <b className="block truncate text-sm">{p.name}</b>
+                    <span className="text-xs text-stone-500">
+                      {p.barcode || "no barcode"} • ₦{p.price} • stock {p.current_stock}
+                      {isPending && p.created_by ? ` • added by ${creators[p.created_by] || "attendant"}` : ""}
+                    </span>
                   </span>
-                </span>
-                {isLow && <Badge tone="red">low</Badge>}
-                {p.is_pinned && <Badge tone="green">pinned</Badge>}
-                {p.status === "pending_review" && <Badge tone="amber">review</Badge>}
-                {p.status === "pending_review" && role === "owner" && (
-                  <Btn size="sm" variant="secondary" onClick={() => approve(p.id)}>Approve</Btn>
+                  {isLow && <Badge tone="red">low</Badge>}
+                  {p.is_pinned && <Badge tone="green">pinned</Badge>}
+                  {isPending && <Badge tone="amber">review</Badge>}
+                </div>
+                {role === "owner" && (
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    {isPending ? (
+                      <>
+                        <Btn size="sm" variant="secondary" onClick={() => openReviewEdit(p)}>Fix</Btn>
+                        <Btn size="sm" onClick={() => approve(p.id)} disabled={!!actionBusy}>Approve</Btn>
+                        <Btn size="sm" variant="ghost" onClick={() => setConfirmDeleteId(p.id)}>Reject</Btn>
+                      </>
+                    ) : (
+                      <>
+                        {restockId === p.id ? (
+                          <span className="flex items-center gap-1.5">
+                            <input value={restockQty} onChange={e => setRestockQty(e.target.value)} placeholder="+qty" inputMode="decimal" className={`${inputCls} w-24 py-1`} />
+                            <Btn size="sm" onClick={() => restock(p.id, parseFloat(restockQty) || 0)} disabled={!!actionBusy}>Add</Btn>
+                            <Btn size="sm" variant="ghost" onClick={() => { setRestockId(null); setRestockQty(""); }}>×</Btn>
+                          </span>
+                        ) : (
+                          <Btn size="sm" variant="secondary" onClick={() => { setRestockId(p.id); setRestockQty(""); }}>Restock</Btn>
+                        )}
+                        <Btn size="sm" variant="ghost" onClick={() => setConfirmDeleteId(p.id)}>Delete</Btn>
+                      </>
+                    )}
+                  </div>
                 )}
               </div>
             );
           })}
           {!items.length && <div className="px-4 py-3"><Empty>No products yet — add one above.</Empty></div>}
         </Card>
-      </Page>
+      </OwnerShell>
       {scanOpen && (
         <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/70 p-4">
           <div className="w-full max-w-sm rounded-3xl bg-white p-4">
@@ -255,6 +395,44 @@ export default function ProductsPage() {
             <Btn variant="secondary" onClick={() => setScanOpen(false)} className="mt-3 w-full">
               Cancel
             </Btn>
+          </div>
+        </div>
+      )}
+      {reviewEdit && (
+        <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-sm rounded-3xl bg-white p-5">
+            <h3 className="font-bold">Review: fix & approve</h3>
+            <p className="mt-0.5 text-xs text-stone-500">Correct the attendant&apos;s entry — it goes live on save.</p>
+            <input value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} placeholder="Name" className={`${inputCls} mt-3`} />
+            <input value={editForm.barcode} onChange={e => setEditForm({ ...editForm, barcode: e.target.value })} placeholder="Barcode (optional)" className={`${inputCls} mt-2`} />
+            <div className="mt-2 flex gap-2">
+              <input value={editForm.price} onChange={e => setEditForm({ ...editForm, price: e.target.value })} placeholder="Price" inputMode="decimal" className={inputCls} />
+              <input value={editForm.cost} onChange={e => setEditForm({ ...editForm, cost: e.target.value })} placeholder="Cost" inputMode="decimal" className={inputCls} />
+              <input value={editForm.reorder} onChange={e => setEditForm({ ...editForm, reorder: e.target.value })} placeholder="Reorder" inputMode="numeric" className={inputCls} />
+            </div>
+            <label className="mt-2 flex min-h-11 items-center gap-2 text-sm">
+              <input type="checkbox" checked={editForm.pinned} onChange={e => setEditForm({ ...editForm, pinned: e.target.checked })} className="size-5 accent-brand-700" />
+              Pinned tile
+            </label>
+            <div className="mt-3 flex gap-2">
+              <Btn variant="secondary" onClick={() => setReviewEdit(null)} className="flex-1">Cancel</Btn>
+              <Btn onClick={saveReviewEdit} disabled={!!actionBusy} className="flex-1">Fix & approve</Btn>
+            </div>
+          </div>
+        </div>
+      )}
+      {confirmDeleteId && (
+        <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-sm rounded-3xl bg-white p-5">
+            <h3 className="font-bold">Delete this product?</h3>
+            <p className="mt-1 text-sm text-stone-600">
+              <b>{items.find(i => i.id === confirmDeleteId)?.name}</b> leaves the catalog.
+              Past sales stay in history — only the product row is deleted.
+            </p>
+            <div className="mt-4 flex gap-2">
+              <Btn variant="secondary" onClick={() => setConfirmDeleteId(null)} className="flex-1">Keep it</Btn>
+              <Btn variant="danger" onClick={() => rejectProduct(confirmDeleteId)} disabled={!!actionBusy} className="flex-1">Delete</Btn>
+            </div>
           </div>
         </div>
       )}
