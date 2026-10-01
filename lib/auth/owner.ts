@@ -53,7 +53,9 @@ export function sendEmailLink(email: string) {
 
 export async function completeEmailLink(): Promise<User | null> {
   if (!isSignInWithEmailLink(auth, window.location.href)) return null;
-  const email = window.localStorage.getItem(EMAIL_KEY) || window.prompt("Email?");
+  const email =
+    window.localStorage.getItem(EMAIL_KEY) ||
+    window.prompt("Which email address did we send the sign-in link to?");
   if (!email) return null;
   const res = await signInWithEmailLink(auth, email, window.location.href);
   window.localStorage.removeItem(EMAIL_KEY);
