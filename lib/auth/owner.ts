@@ -11,7 +11,7 @@ import {
   onAuthStateChanged,
   type User,
 } from "firebase/auth";
-import { collection, query, where, getDocs } from "firebase/firestore";
+import { collection, getDocs } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase/client";
 
 export interface OwnerShop {
@@ -25,13 +25,20 @@ export function signInWithGoogle() {
 }
 
 // Call once on the landing page: completes a pending redirect sign-in.
+// Throws on failure (e.g. auth/unauthorized-domain) — callers must catch
+// and show friendlyAuthError, never swallow.
 export async function completeRedirect(): Promise<User | null> {
-  try {
-    const res = await getRedirectResult(auth);
-    return res?.user ?? null;
-  } catch {
-    return null;
-  }
+  const res = await getRedirectResult(auth);
+  return res?.user ?? null;
+}
+
+export function friendlyAuthError(e: unknown): string {
+  const code = (e as { code?: string })?.code || "";
+  if (code === "auth/unauthorized-domain")
+    return "Sign-in is blocked from this address. Testing on a phone or LAN URL? Add the domain in Firebase console → Authentication → Settings → Authorized domains, then retry.";
+  if (code === "auth/network-request-failed")
+    return "Network hiccup during sign-in — check your connection and retry.";
+  return "Sign-in didn't finish — please try again.";
 }
 
 const EMAIL_KEY = "stockfindr-email-link";
@@ -65,6 +72,7 @@ export function useOwner() {
 }
 
 export async function listOwnerShops(uid: string): Promise<OwnerShop[]> {
-  const snap = await getDocs(query(collection(db, "shops"), where("ownerUid", "==", uid)));
+  // Private per-user index — top-level shops has no list rule by design.
+  const snap = await getDocs(collection(db, `users/${uid}/shops`));
   return snap.docs.map((d) => ({ id: d.id, name: (d.data().name as string) || d.id }));
 }

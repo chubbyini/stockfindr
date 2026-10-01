@@ -8,6 +8,7 @@ import {
   signInWithGoogle,
   completeRedirect,
   completeEmailLink,
+  friendlyAuthError,
   sendEmailLink,
   useOwner,
   listOwnerShops,
@@ -20,11 +21,17 @@ export default function Home() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [msg, setMsg] = useState("");
+  const [routeError, setRouteError] = useState("");
+  const [retryKey, setRetryKey] = useState(0);
   const [routing, setRouting] = useState(true);
 
   useEffect(() => {
     (async () => {
-      await completeRedirect().catch(() => null);
+      try {
+        await completeRedirect();
+      } catch (e) {
+        setMsg(friendlyAuthError(e));
+      }
       await completeEmailLink().catch(() => null);
       setRouting(false);
     })();
@@ -44,13 +51,34 @@ export default function Home() {
           router.push("/dashboard");
         }
       } catch {
-        setMsg("Couldn't load your shops — check your connection.");
+        // Never spin forever: say it, offer retry.
+        setRouteError("Couldn't load your shops — check your connection, then retry.");
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, loading, routing]);
+  }, [user, loading, routing, retryKey]);
 
-  if (loading || routing || user) return <RouteLoading label="Loading Stockfindr…" />;
+  if (loading || routing) return <RouteLoading label="Loading Stockfindr…" />;
+
+  if (routeError) {
+    return (
+      <Page>
+        <Card className="mt-8 p-6 text-center">
+          <h1 className="text-xl font-bold">Something got stuck</h1>
+          <p className="mt-2 text-sm text-stone-600">{routeError}</p>
+          <Btn
+            className="mt-4 w-full"
+            onClick={() => { setRouteError(""); setRetryKey((k) => k + 1); }}
+          >
+            Try again
+          </Btn>
+          <p className="mt-3 text-xs text-stone-400">Signed in{user?.email ? ` as ${user.email}` : ""}.</p>
+        </Card>
+      </Page>
+    );
+  }
+
+  if (user) return <RouteLoading label="Finding your shops…" />;
 
   return (
     <Page>

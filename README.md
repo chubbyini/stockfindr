@@ -82,6 +82,10 @@ attendants with single-use 8-char codes from `/staff`. Attendants join at
 npx firebase-tools deploy --only firestore:rules --project stocfindr
 ```
 
+Redeploy after EVERY rules change — the app silently depends on the live
+rules. Testing sign-in on a phone/LAN URL? Add the domain under Firebase
+console → Authentication → Settings → Authorized domains first.
+
 ## Seed the first shop (local-dev fallback)
 
 Rules are deployed. Firebase console → Authentication → enable **Email link**.

@@ -66,6 +66,10 @@ await db.doc(`shops/${shopId}`).set(
   { merge: true }
 );
 await db.doc(`shops/${shopId}/members/${ownerUid}`).set({ role: "owner" });
+// Private per-user index (mirrors what /onboarding writes for self-serve).
+await db
+  .doc(`users/${ownerUid}/shops/${shopId}`)
+  .set({ name: shopName, createdAt: FieldValue.serverTimestamp() }, { merge: true });
 
 for (const entry of staffArg.split(",").map((s) => s.trim()).filter(Boolean)) {
   const [name, pin, role = "attendant"] = entry.split(":");

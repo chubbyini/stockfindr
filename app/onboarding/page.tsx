@@ -40,7 +40,14 @@ export default function OnboardingPage() {
         inviteCodes: [],
         createdAt: serverTimestamp(),
       });
-      batch.set(doc(db, `shops/${shopRef.id}/members/${user!.uid}`), { role: "owner" });
+      // Private index so the owner can list their shops (top-level shops
+      // has no list rule — strangers must never enumerate shops).
+      // No member doc: shop.ownerUid is the founder's credential, and batch
+      // sibling writes are invisible to each other in rules evaluation.
+      batch.set(doc(db, `users/${user!.uid}/shops/${shopRef.id}`), {
+        name: name.trim(),
+        createdAt: serverTimestamp(),
+      });
       await batch.commit();
       setSession({ shopId: shopRef.id });
       router.push("/dashboard");

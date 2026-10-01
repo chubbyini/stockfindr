@@ -4,17 +4,31 @@ service cloud.firestore {
     function authed() {
       return request.auth != null;
     }
+    // The founder needs no member doc: shop.ownerUid is the source of truth.
+    // (Deliberately no cross-document reads on same-batch writes: batched
+    // writes are invisible to each other during rules evaluation.)
     function isMember(shopId) {
-      return authed()
-        && exists(/databases/$(database)/documents/shops/$(shopId)/members/$(request.auth.uid));
+      return authed() && (
+        get(/databases/$(database)/documents/shops/$(shopId)).data.ownerUid == request.auth.uid
+        || exists(/databases/$(database)/documents/shops/$(shopId)/members/$(request.auth.uid))
+      );
     }
     function isOwner(shopId) {
-      return authed()
-        && get(/databases/$(database)/documents/shops/$(shopId)/members/$(request.auth.uid)).data.role == 'owner';
+      return authed() && (
+        get(/databases/$(database)/documents/shops/$(shopId)).data.ownerUid == request.auth.uid
+        || get(/databases/$(database)/documents/shops/$(shopId)/members/$(request.auth.uid)).data.role == 'owner'
+      );
     }
     function shopOwnedBy(shopId, uid) {
       return authed()
         && get(/databases/$(database)/documents/shops/$(shopId)).data.ownerUid == uid;
+    }
+    // Private per-user namespace (shop index, prefs). No cross-reads needed.
+    match /users/{uid} {
+      allow read, write: if authed() && uid == request.auth.uid;
+      match /shops/{sid} {
+        allow read, write: if authed() && uid == request.auth.uid;
+      }
     }
     // Invite must be claimable: exists, unused, unexpired.
     function inviteLive(code) {
@@ -52,6 +66,9 @@ service cloud.firestore {
     match /shops/{shopId} {
       allow read: if isMember(shopId);
       // Self-serve: any signed-in user can found a shop they own.
+      // NOTE: there is intentionally no list rule here — owners discover
+      // their shops via their private users/{uid}/shops index instead, so
+      // strangers can never enumerate shops.
       allow create: if authed()
         && request.resource.data.ownerUid == request.auth.uid
         && request.resource.data.name is string
@@ -61,13 +78,11 @@ service cloud.firestore {
         && (!('currency' in request.resource.data) || request.resource.data.currency is string);
       allow update, delete: if isOwner(shopId);
 
+      // Co-owners / managers added later by the owner. The founder needs no
+      // member doc (ownerUid covers them).
       match /members/{uid} {
         allow read: if isMember(shopId);
-        // Bootstrap: the founder claims their own owner seat.
-        allow create: if authed() && uid == request.auth.uid
-          && request.resource.data.role == 'owner'
-          && get(/databases/$(database)/documents/shops/$(shopId)).data.ownerUid == request.auth.uid;
-        allow update, delete: if isOwner(shopId);
+        allow create, update, delete: if isOwner(shopId);
       }
 
       match /staff/{sid} {
