@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useCart, useSession, round2 } from "@/store/pos";
 import { tilldb } from "@/lib/db/dexie";
 import { enableOffline } from "@/lib/firebase/client";
@@ -12,7 +13,8 @@ import { Badge, Btn, Empty, TopBar, inputCls } from "@/components/ui";
 
 export default function SellPage() {
   const { lines, add, inc, dec, clear, restore, total } = useCart();
-  const { shopId, staffId, staffName, deviceId } = useSession();
+  const { shopId, staffId, staffName, deviceId, setSession } = useSession();
+  const router = useRouter();
   const [catalog, setCatalog] = useState<Product[]>([]);
   const [search, setSearch] = useState("");
   const [pending, setPending] = useState(0);
@@ -31,6 +33,31 @@ export default function SellPage() {
     return () => { clearInterval(t); clearInterval(promo); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shopId]);
+
+  // Counter discipline: 5 idle minutes locks the till back to the PIN screen.
+  // The basket survives (separate store) — the next PIN returns to it.
+  useEffect(() => {
+    let t: ReturnType<typeof setTimeout>;
+    const lock = () => {
+      setSession({ staffId: "", staffName: "" });
+      router.push("/pin");
+    };
+    const reset = () => {
+      clearTimeout(t);
+      t = setTimeout(lock, 5 * 60 * 1000);
+    };
+    reset();
+    window.addEventListener("pointerdown", reset);
+    window.addEventListener("keydown", reset);
+    window.addEventListener("touchstart", reset);
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener("pointerdown", reset);
+      window.removeEventListener("keydown", reset);
+      window.removeEventListener("touchstart", reset);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function loadLocal() {
     const local = await tilldb.products.where("shopId").equals(shopId).toArray();
@@ -164,9 +191,21 @@ export default function SellPage() {
         title="Sell"
         sub={staffName || "Attendant"}
         right={
-          <Badge tone={pending ? "amber" : "green"}>
-            {pending ? `${pending} to sync` : "synced"}
-          </Badge>
+          <span className="flex items-center gap-2">
+            <Badge tone={pending ? "amber" : "green"}>
+              {pending ? `${pending} to sync` : "synced"}
+            </Badge>
+            <Btn
+              size="sm"
+              variant="secondary"
+              onClick={() => {
+                setSession({ staffId: "", staffName: "" });
+                router.push("/pin");
+              }}
+            >
+              Lock
+            </Btn>
+          </span>
         }
       />
       <main className="mx-auto grid w-full max-w-5xl gap-3 px-4 py-4 md:grid-cols-[1fr_360px]">

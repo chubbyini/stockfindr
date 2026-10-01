@@ -53,6 +53,9 @@ export default function PinPage() {
         <div className="mt-4">
           <Badge tone="green">Works offline</Badge>
         </div>
+        <p className="mt-3 text-xs text-stone-500">
+          New here? <a href="/join" className="underline underline-offset-2">Join your shop with a code first</a>
+        </p>
       </Card>
     </Page>
   );

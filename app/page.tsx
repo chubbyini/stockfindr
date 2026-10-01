@@ -122,15 +122,20 @@ export default function Home() {
         </div>
         {msg && <p className="mt-2 text-sm text-stone-600">{msg}</p>}
       </Card>
-      <Card className="mt-3 flex items-center justify-between gap-3 bg-brand-50 p-4">
+      <Card className="mt-3 bg-brand-50 p-4">
         <p className="text-sm text-stone-700">
           <b>Shop attendant?</b>
           <br />
-          Join with the code your owner gave you.
+          First time: join with your owner&apos;s code. Daily: open the till with your PIN.
         </p>
-        <Btn variant="secondary" size="sm" onClick={() => router.push("/join")}>
-          Join
-        </Btn>
+        <div className="mt-3 flex gap-2">
+          <Btn variant="secondary" size="sm" onClick={() => router.push("/join")} className="flex-1">
+            Join with code
+          </Btn>
+          <Btn variant="secondary" size="sm" onClick={() => router.push("/pin")} className="flex-1">
+            Open till (PIN)
+          </Btn>
+        </div>
       </Card>
       <p className="mt-4 text-center text-xs text-stone-400">
         Works offline • Selling is the only chore
