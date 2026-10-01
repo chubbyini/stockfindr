@@ -1,5 +1,5 @@
 import type { ButtonHTMLAttributes, ReactNode } from "react";
-import { SojournerToken } from "@sojournerbuilds/mark/tokens";
+import Token from "@/components/brand/token";
 
 export const inputCls =
   "w-full rounded-xl border border-stone-300 bg-white px-3.5 py-2.5 outline-none transition placeholder:text-stone-400 focus:border-brand-600 focus:ring-2 focus:ring-brand-200";
@@ -52,7 +52,7 @@ export function TopBar({ title, sub, right }: { title: string; sub?: string; rig
   return (
     <header className="sticky top-0 z-10 -mx-4 border-b border-stone-200 bg-paper/95 px-4 py-3 backdrop-blur">
       <div className="mx-auto flex w-full max-w-5xl items-center gap-3">
-        <SojournerToken size={34} spinning={false} />
+        <Token size={34} spinning={false} />
         <div className="min-w-0 flex-1">
           <h1 className="truncate text-lg font-bold leading-tight">{title}</h1>
           {sub && <p className="truncate text-xs text-stone-500">{sub}</p>}

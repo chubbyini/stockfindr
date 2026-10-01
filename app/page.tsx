@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { SojournerToken } from "@sojournerbuilds/mark/tokens";
+import Token from "@/components/brand/token";
 import RouteLoading from "@/components/brand/route-loading";
 import { Btn, Card, Page, inputCls } from "@/components/ui";
 import {
@@ -56,7 +56,7 @@ export default function Home() {
     <Page>
       <Card className="mt-4 p-6 text-center">
         <div className="flex justify-center">
-          <SojournerToken size={104} spinning={false} />
+          <Token size={104} spinning={false} />
         </div>
         <h1 className="mt-3 text-3xl font-bold tracking-tight">Stockfindr</h1>
         <p className="mt-2 text-[15px] leading-snug text-stone-600">

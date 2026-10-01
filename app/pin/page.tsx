@@ -4,7 +4,7 @@ import { tilldb } from "@/lib/db/dexie";
 import { verifyPin, pinRateLimitCheck, pinRecordFailure, pinClearFailures } from "@/lib/auth/pin";
 import { useSession } from "@/store/pos";
 import { useRouter } from "next/navigation";
-import { SojournerToken } from "@sojournerbuilds/mark/tokens";
+import Token from "@/components/brand/token";
 import { Badge, Btn, Card, Page, ErrorText } from "@/components/ui";
 
 export default function PinPage() {
@@ -31,7 +31,7 @@ export default function PinPage() {
     <Page>
       <Card className="mt-8 p-6 text-center">
         <div className="flex justify-center">
-          <SojournerToken size={64} spinning={false} />
+          <Token size={64} spinning={false} />
         </div>
         <h1 className="mt-2 text-2xl font-bold">Open the till</h1>
         <p className="mt-1 text-sm text-stone-500">Enter your 4-digit PIN to start selling.</p>
