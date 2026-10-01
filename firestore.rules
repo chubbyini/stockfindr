@@ -1,17 +1,92 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    function authed() {
+      return request.auth != null;
+    }
     function isMember(shopId) {
-      return request.auth != null
+      return authed()
         && exists(/databases/$(database)/documents/shops/$(shopId)/members/$(request.auth.uid));
     }
     function isOwner(shopId) {
-      return request.auth != null
+      return authed()
         && get(/databases/$(database)/documents/shops/$(shopId)/members/$(request.auth.uid)).data.role == 'owner';
+    }
+    function shopOwnedBy(shopId, uid) {
+      return authed()
+        && get(/databases/$(database)/documents/shops/$(shopId)).data.ownerUid == uid;
+    }
+    // Invite must be claimable: exists, unused, unexpired.
+    function inviteLive(code) {
+      let p = /databases/$(database)/documents/invites/$(code);
+      return exists(p)
+        && get(p).data.get('usedBy', null) == null
+        && request.time < get(p).data.expiresAt;
+    }
+    // Top-level invite codes: knowledge of the unguessable code IS the
+    // credential for a single-doc get. No listing — owners enumerate their
+    // own codes via the shop doc's inviteCodes array.
+    match /invites/{code} {
+      allow get: if true;
+      allow list: if false;
+      allow create: if authed()
+        && request.resource.data.shopId is string
+        && shopOwnedBy(request.resource.data.shopId, request.auth.uid)
+        && request.resource.data.shopName is string
+        && request.resource.data.expiresAt is timestamp
+        && request.resource.data.expiresAt > request.time;
+      // Consume: holder burns the code exactly once (or the owner edits).
+      allow update: if (
+        request.resource.data.shopId is string
+        && shopOwnedBy(request.resource.data.shopId, request.auth.uid)
+      ) || (
+        resource.data.get('usedBy', null) == null
+        && request.time < resource.data.expiresAt
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['usedBy', 'usedAt'])
+        && request.resource.data.usedBy is string
+        && request.resource.data.usedAt is number
+      );
+      allow delete: if request.resource.data.shopId is string
+        && shopOwnedBy(request.resource.data.shopId, request.auth.uid);
     }
     match /shops/{shopId} {
       allow read: if isMember(shopId);
-      allow write: if isOwner(shopId);
+      // Self-serve: any signed-in user can found a shop they own.
+      allow create: if authed()
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.name is string
+        && request.resource.data.name.size() >= 1
+        && request.resource.data.name.size() <= 80
+        && (!('timezone' in request.resource.data) || request.resource.data.timezone is string)
+        && (!('currency' in request.resource.data) || request.resource.data.currency is string);
+      allow update, delete: if isOwner(shopId);
+
+      match /members/{uid} {
+        allow read: if isMember(shopId);
+        // Bootstrap: the founder claims their own owner seat.
+        allow create: if authed() && uid == request.auth.uid
+          && request.resource.data.role == 'owner'
+          && get(/databases/$(database)/documents/shops/$(shopId)).data.ownerUid == request.auth.uid;
+        allow update, delete: if isOwner(shopId);
+      }
+
+      match /staff/{sid} {
+        allow read: if isMember(shopId);
+        // Owner manages staff, or a code-holder joins (plaintext PINs rejected by hash length).
+        allow create: if isOwner(shopId) || (
+          request.resource.data.shopId == shopId
+          && request.resource.data.role == 'attendant'
+          && request.resource.data.active == true
+          && request.resource.data.name is string
+          && request.resource.data.name.size() >= 1
+          && request.resource.data.pinHash is string
+          && request.resource.data.pinHash.size() > 20
+          && request.resource.data.inviteCode is string
+          && inviteLive(request.resource.data.inviteCode)
+        );
+        allow update, delete: if isOwner(shopId);
+      }
+
       match /products/{pid} {
         // attendants can quick-add (create) but not delete; owner edits
         allow read: if isMember(shopId);
@@ -49,8 +124,6 @@ service cloud.firestore {
       match /reorder_drafts/{rid} { allow read: if isMember(shopId); allow write: if isOwner(shopId); }
       match /devices/{did} { allow read, write: if isMember(shopId); }
       match /summaries/{sid} { allow read: if isMember(shopId); allow write: if isOwner(shopId); }
-      match /staff/{sid} { allow read: if isMember(shopId); allow write: if isOwner(shopId); }
-      match /members/{uid} { allow read: if isMember(shopId); allow write: if isOwner(shopId); }
     }
   }
 }
