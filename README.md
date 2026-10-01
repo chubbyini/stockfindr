@@ -48,16 +48,30 @@ sale. Offline-first: the network never blocks a sale.
 5. `feat: catalog setup (manual, import, quick-add)` — products page
 6. `feat: owner dashboard + pin + security rules`
 7. `feat: Sojourner brand (loader, logo, favicon, loading screens)`
+8. `chore: rename project to stockfindr` — user-facing strings only
+9. `feat: trigger.dev nightly summary cron` — 18:00 Lagos, Telegram + InApp
+
+## Nightly jobs (Trigger.dev)
+
+`trigger/nightly-summary.ts` runs **18:00 Africa/Lagos daily**: today's totals,
+top sellers, low stock → `summaries/{YYYY-MM-DD}` (InApp) + Telegram (once per
+date key — retries recompute but never resend).
+
+```bash
+npm run trigger:dev   # sync tasks + schedules (needs TRIGGER_SECRET_KEY)
+```
+
+First time: `npx trigger.dev@latest init` to link your project (fills the
+`project:` ref in `trigger.config.ts`), then paste the dev key into `.env.local`.
+Deploy with `npx trigger.dev@latest deploy`. Test from the dashboard's
+"Test schedule" button.
 
 ## Push to GitHub
 
-No remote is configured yet. To publish:
+Live at `github.com/chubbyini/stockfindr` (`main`).
 
 ```bash
-# web: create an empty repo, then
-git remote add origin https://github.com/chubbyini/stockfindr.git
-git branch -M main
-git push -u origin main
+git push   # remote + upstream already configured
 ```
 
 ## Regenerate brand assets
